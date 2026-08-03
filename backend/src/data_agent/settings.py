@@ -8,12 +8,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = BACKEND_ROOT.parent
 # 配置层只在后端进程加载本地 .env；该文件已被 gitignore 排除。
 load_dotenv(PROJECT_ROOT / ".env")
 load_dotenv(PROJECT_ROOT / ".env.sqlserver")
 DEFAULT_DATABASE_PATH = (
-    PROJECT_ROOT / "sqlite" / "data-agent-2026-7-15.sqlite"
+    PROJECT_ROOT / "data" / "sqlite" / "data-agent-2026-7-15.sqlite"
 )
 SEMANTIC_LAYER_ROOT = Path(__file__).resolve().parent / "semantic_layer"
 CATALOG_PATH = SEMANTIC_LAYER_ROOT / "view_catalog.json"

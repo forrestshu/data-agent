@@ -5,6 +5,33 @@ SQLite 内部测试集和 `prod.Cux` SQL Server 公司数据库，并可在“�
 DeepSeek 根据语义层生成当前方言的参数化 `SELECT`，后端通过独立 SQL 守卫
 校验后只读执行，并返回自然语言回答与真实数据依据。
 
+## 项目结构
+
+```text
+data-agent/
+├── frontend/                  # React + Vite 前端
+│   ├── src/
+│   ├── public/
+│   └── tests/                 # 前端测试目录（当前预留）
+├── backend/
+│   ├── pyproject.toml         # Python 项目与命令入口
+│   ├── uv.lock                # Python 依赖锁
+│   ├── src/data_agent/        # FastAPI 与 AI Agent 源码
+│   └── tests/                 # 后端单元与接口测试
+├── data/sqlite/               # 本地 SQLite 快照（不纳入 Git）
+├── docs/                      # 项目与数据文档
+├── tests/
+│   ├── evaluation/gi/         # ERP SQL 评测输入、结果与报告
+│   └── test_end_to_end.py     # 跨模块端到端测试
+├── docker/                    # Dockerfile 与 Compose 配置
+├── scripts/check.sh           # 后端、端到端、前端与 Compose 检查
+├── artifacts/docker/          # 本地历史镜像归档（不纳入 Git）
+├── .data-agent/               # 运行状态与本地知识画像（不纳入 Git）
+├── README.md
+├── .env.example
+└── .gitignore
+```
+
 ## 主要能力
 
 - 语义层向模型提供 16 个 ERP 视图、154 个字段的用途与粒度、字段语义、批准关系和当前数据库结构；
@@ -42,7 +69,7 @@ cp .env.example .env
 安装并构建：
 
 ```bash
-uv sync
+uv sync --project backend
 pnpm --dir frontend install
 pnpm --dir frontend build
 ```
@@ -50,7 +77,7 @@ pnpm --dir frontend build
 启动包含前端静态页面的 FastAPI：
 
 ```bash
-uv run data-agent-api
+uv run --project backend data-agent-api
 ```
 
 打开 <http://127.0.0.1:8000>。API 文档位于
@@ -59,7 +86,7 @@ uv run data-agent-api
 前端热更新开发模式：
 
 ```bash
-uv run data-agent-api
+uv run --project backend data-agent-api
 pnpm --dir frontend dev
 ```
 
@@ -67,10 +94,10 @@ Vite 页面位于 <http://127.0.0.1:5173>，`/api` 会代理到 FastAPI。
 
 ## 更换或更新 SQLite
 
-默认数据库路径定义在 `src/data_agent/settings.py`。部署时可以通过环境变量切换：
+默认数据库路径定义在 `backend/src/data_agent/settings.py`。部署时可以通过环境变量切换：
 
 ```bash
-DATA_AGENT_DATABASE=/absolute/path/new-snapshot.sqlite uv run data-agent-api
+DATA_AGENT_DATABASE=/absolute/path/new-snapshot.sqlite uv run --project backend data-agent-api
 ```
 
 系统启动、每次查询前都会比较数据库快速签名；发现变化后自动执行知识同步。
@@ -96,10 +123,10 @@ SQL Server 统计按视图使用最多两个独立连接并发执行；相同结
 
 同步生成或更新：
 
-- `src/data_agent/semantic_layer/database_profile.json`：当前数据库机器画像；
-- `src/data_agent/semantic_layer/knowledge_sync_report.json`：本次变化报告；
-- `src/data_agent/semantic_layer/view_catalog.json`：正式业务语义、字段解释、关联关系、数据库指纹和自动质量限制；
-- `src/data_agent/semantic_layer/semantic_proposals.json`：新增表/字段的 AI 语义建议及人工审核状态。
+- `backend/src/data_agent/semantic_layer/database_profile.json`：当前数据库机器画像；
+- `backend/src/data_agent/semantic_layer/knowledge_sync_report.json`：本次变化报告；
+- `backend/src/data_agent/semantic_layer/view_catalog.json`：正式业务语义、字段解释、关联关系、数据库指纹和自动质量限制；
+- `backend/src/data_agent/semantic_layer/semantic_proposals.json`：新增表/字段的 AI 语义建议及人工审核状态。
 
 `purpose`、`grain`、`keywords`、`aliases`、`filter_columns`、
 `output_columns`、`join_columns`、`column_semantics` 和 `relationships` 属于人工审核语义，
@@ -140,18 +167,49 @@ SQL Server 机器画像、同步报告和语义审核状态保存在
 - AI 语义建议在人工批准前不会修改查询白名单；
 - Python 测试、TypeScript 类型检查、lint 与生产构建全部通过。
 
+## Docker 部署
+
+从项目根目录构建镜像：
+
+```bash
+docker build -f docker/Dockerfile -t erp-data-agent:local .
+```
+
+也可以使用 Compose；它会读取根目录 `.env` 并持久化 `.data-agent` 运行状态：
+
+```bash
+docker compose -f docker/docker-compose.yml up --build
+```
+
+历史 OCI 镜像归档保存在 `artifacts/docker/`，该目录不纳入 Git。长期发布建议推送到镜像仓库或制品库。
+
+## 测试
+
+```bash
+uv run --project backend python -m unittest discover -s backend/tests
+uv run --project backend python -m unittest discover -s tests
+pnpm --dir frontend exec tsc --noEmit
+```
+
+也可以统一执行：
+
+```bash
+./scripts/check.sh
+```
+
 ## 系统阅读地图
 
-- `src/data_agent/api.py`：HTTP 接口和前后端边界；
-- `src/data_agent/llm.py`：DeepSeek 配置与 OpenAI 兼容调用边界；
-- `src/data_agent/ai_agent.py`：语义层约束的 Text-to-SQL、澄清和证据回答；
-- `src/data_agent/router.py`：自然语言意图路由；
-- `src/data_agent/sql_guard.py`：模型 SQL 的语法树白名单、安全限制和条数上限；
-- `src/data_agent/data_sources.py`：双数据源配置、连接适配与活动源持久化；
-- `src/data_agent/executor.py`：二次 SQL 校验、超时限制与双源只读执行；
-- `src/data_agent/knowledge_sync.py`：SQLite 变化检测、画像和兼容性守卫；
-- `src/data_agent/sqlserver_knowledge_sync.py`：SQL Server 结构检查、限时画像和兼容性守卫；
-- `src/data_agent/semantic_review.py`：新增结构的 AI 语义提案与人工审核；
-- `src/data_agent/semantic_layer/`：人工业务知识与机器数据库事实；
+- `backend/src/data_agent/api.py`：HTTP 接口和前后端边界；
+- `backend/src/data_agent/llm.py`：DeepSeek 配置与 OpenAI 兼容调用边界；
+- `backend/src/data_agent/ai_agent.py`：语义层约束的 Text-to-SQL、澄清和证据回答；
+- `backend/src/data_agent/router.py`：自然语言意图路由；
+- `backend/src/data_agent/sql_guard.py`：模型 SQL 的语法树白名单、安全限制和条数上限；
+- `backend/src/data_agent/data_sources.py`：双数据源配置、连接适配与活动源持久化；
+- `backend/src/data_agent/executor.py`：二次 SQL 校验、超时限制与双源只读执行；
+- `backend/src/data_agent/knowledge_sync.py`：SQLite 变化检测、画像和兼容性守卫；
+- `backend/src/data_agent/sqlserver_knowledge_sync.py`：SQL Server 结构检查、限时画像和兼容性守卫；
+- `backend/src/data_agent/semantic_review.py`：新增结构的 AI 语义提案与人工审核；
+- `backend/src/data_agent/semantic_layer/`：人工业务知识与机器数据库事实；
 - `frontend/src/App.tsx`：左侧导航、三页面切换、查询对话和知识治理状态机；
-- `tests/`：路由、端到端、HTTP API 与快照升级测试。
+- `backend/tests/`：路由、HTTP 接口、Text-to-SQL 与知识同步测试；
+- `tests/`：跨模块端到端测试与 ERP SQL 评测资产。

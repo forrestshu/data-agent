@@ -13,10 +13,10 @@ from data_agent.settings import CATALOG_PATH, PROJECT_ROOT
 
 
 ORIGINAL_DATABASE_PATH = (
-    PROJECT_ROOT / "sqlite" / "data-agent-2026-07-08.sqlite"
+    PROJECT_ROOT / "data" / "sqlite" / "data-agent-2026-07-08.sqlite"
 )
 UPDATED_DATABASE_PATH = (
-    PROJECT_ROOT / "sqlite" / "data-agent-2026-7-15.sqlite"
+    PROJECT_ROOT / "data" / "sqlite" / "data-agent-2026-7-15.sqlite"
 )
 
 

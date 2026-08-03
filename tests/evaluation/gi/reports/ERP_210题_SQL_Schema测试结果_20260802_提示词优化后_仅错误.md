@@ -5,8 +5,8 @@
 - 后端接口：`http://127.0.0.1:8001/api/query`
 - 数据源：`sqlite_internal`（SQLite 本地快照）
 - 基准答案：`docs/基准答案.md`
-- 评分标准：`test-gi/ERP_210题_SQL_Schema测试标准.md`
-- 原始输出：`test-gi/ERP_210题_SQLite输出_20260802_提示词优化后.json`
+- 评分标准：`tests/evaluation/gi/reports/ERP_210题_SQL_Schema测试标准.md`
+- 原始输出：`tests/evaluation/gi/results/ERP_210题_SQLite输出_20260802_提示词优化后.json`
 
 ## 结论
 
@@ -1557,4 +1557,3 @@
 - 实际 SQLite SQL：`SELECT Amount, BeqAmount, RemainAmount, BeqRemainAmount FROM AiQueryPayablesV WHERE VendorName = ?`
 - 参数：`["金龙精密铜管集团股份有限公司"]`
 - 未通过原因：视图应为 aiqueryreceivablesv，实际为 aiquerypayablesv；筛选条件的字段、运算符、值或查询范围与标准不一致
-

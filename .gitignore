@@ -12,7 +12,6 @@ __pycache__/
 .playwright-mcp/
 
 # Local data snapshots and SQLite runtime sidecars
-sqlite/*.sqlite
 data/sqlite/*.sqlite
 *.sqlite-shm
 *.sqlite-wal

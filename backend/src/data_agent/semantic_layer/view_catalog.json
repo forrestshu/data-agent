@@ -1,5 +1,5 @@
 {
-  "catalog_version": "2026-08-02T18:31:29+08:00",
+  "catalog_version": "2026-08-03T21:18:37+08:00",
   "source": "Cux SQL Server views imported into data-agent.sqlite",
   "known_limitations": [
     "SQLite 业务对象是 SQL Server 视图的离线快照，不代表查询时的实时业务状态。",
@@ -1333,7 +1333,7 @@
     "content_fingerprint": "3c4e1e6ad1da36fe7d4b9e8424d6c61671e2aed3a456c93348a0927f1c193537",
     "schema_fingerprint": "4a3eb36e073a0c12f63fabbfb29ad3ed7f3201e31a9b6b61e9479b598f6028c6",
     "snapshot_started_at": "2026-07-15T12:44:41+08:00",
-    "profile_generated_at": "2026-08-02T18:31:29+08:00"
+    "profile_generated_at": "2026-08-03T21:18:37+08:00"
   },
   "generated_profile": "database_profile.json",
   "generated_limitations": [

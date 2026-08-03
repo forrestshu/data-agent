@@ -1,9 +1,9 @@
 {
   "profile_version": 1,
-  "generated_at": "2026-08-02T18:31:29+08:00",
+  "generated_at": "2026-08-03T21:18:37+08:00",
   "database": {
     "file_name": "data-agent-2026-7-15.sqlite",
-    "path": "/Users/forrestshu/Documents/data-agent/sqlite/data-agent-2026-7-15.sqlite",
+    "path": "/Users/forrestshu/Documents/data-agent/data/sqlite/data-agent-2026-7-15.sqlite",
     "file_size": 150351872,
     "modified_ns": 1784090887535256872,
     "wal_size": 0,

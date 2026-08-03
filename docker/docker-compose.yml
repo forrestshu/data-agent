@@ -1,0 +1,16 @@
+services:
+  data-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: erp-data-agent:local
+    env_file:
+      - ../.env
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    volumes:
+      - data-agent-runtime:/app/.data-agent
+
+volumes:
+  data-agent-runtime:
