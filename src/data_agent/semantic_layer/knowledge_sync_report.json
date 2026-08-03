@@ -1,0 +1,35 @@
+{
+  "status": "ready",
+  "generated_at": "2026-08-02T18:31:29+08:00",
+  "database": {
+    "file_name": "data-agent-2026-7-15.sqlite",
+    "path": "/Users/forrestshu/Documents/data-agent/sqlite/data-agent-2026-7-15.sqlite",
+    "file_size": 150351872,
+    "modified_ns": 1784090887535256872,
+    "wal_size": 0,
+    "wal_modified_ns": 0,
+    "content_fingerprint": "3c4e1e6ad1da36fe7d4b9e8424d6c61671e2aed3a456c93348a0927f1c193537",
+    "schema_fingerprint": "4a3eb36e073a0c12f63fabbfb29ad3ed7f3201e31a9b6b61e9479b598f6028c6",
+    "snapshot_started_at": "2026-07-15T12:44:41+08:00",
+    "snapshot_finished_at": "2026-07-15T12:45:46+08:00"
+  },
+  "summary": {
+    "business_table_count": 16,
+    "total_row_count": 801499,
+    "all_null_column_count": 1
+  },
+  "drift": {
+    "new_tables": [],
+    "removed_tables": [],
+    "new_columns": {},
+    "removed_columns": {},
+    "type_changes": {},
+    "row_count_changes": []
+  },
+  "compatibility": {
+    "query_ready": true,
+    "invalid_views": [],
+    "pending_review_tables": [],
+    "policy": "新增表/字段只进入机器画像，业务用途与查询白名单需人工审核。"
+  }
+}

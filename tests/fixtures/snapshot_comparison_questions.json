@@ -1,0 +1,60 @@
+[
+  {"id": 1, "category": "物料精确查询", "expected_view": "AiQueryPartV", "question": "查询物料 110000012 的物料描述和公司名称"},
+  {"id": 2, "category": "物料精确查询", "expected_view": "AiQueryPartV", "question": "查询物料 6100001876 的基本信息"},
+  {"id": 3, "category": "物料模糊查询", "expected_view": "AiQueryPartV", "question": "帮我找物料描述中包含“16Mn钢板”的物料"},
+  {"id": 4, "category": "物料模糊查询", "expected_view": "AiQueryPartV", "question": "查询物料描述中包含“Q235钢板”的物料编码和描述"},
+  {"id": 5, "category": "物料模糊查询", "expected_view": "AiQueryPartV", "question": "有没有螺栓之类的物料"},
+  {"id": 6, "category": "物料统计", "expected_view": "AiQueryPartV", "question": "当前物料主数据一共有多少种物料"},
+  {"id": 7, "category": "物料统计", "expected_view": "AiQueryPartV", "question": "物料描述中包含“TS机柜”的物料共有多少种"},
+  {"id": 8, "category": "物料排行", "expected_view": "AiQueryPartV", "question": "列出前 5 个物料描述中包含“控制柜”的物料编码和描述"},
+
+  {"id": 9, "category": "库存精确查询", "expected_view": "AiQueryPartOnHandV", "question": "查询物料 110000012 的库存数量、库位和货位"},
+  {"id": 10, "category": "库存精确查询", "expected_view": "AiQueryPartOnHandV", "question": "查询物料 6100001876 在各库位的库存数量"},
+  {"id": 11, "category": "库存聚合", "expected_view": "AiQueryPartOnHandV", "question": "所有物料的库存数量合计是多少"},
+  {"id": 12, "category": "库存统计", "expected_view": "AiQueryPartOnHandV", "question": "当前有库存记录的不同物料共有多少种"},
+  {"id": 13, "category": "库存聚合", "expected_view": "AiQueryPartOnHandV", "question": "物料 110000012 在全部库位的库存数量合计是多少"},
+  {"id": 14, "category": "库存阈值", "expected_view": "AiQueryPartOnHandV", "question": "列出单个库位库存数量低于 25 的物料、库位和库存数量，并按库存从低到高排序"},
+  {"id": 15, "category": "库存分组", "expected_view": "AiQueryPartOnHandV", "question": "按物料汇总全部库位库存，列出库存合计低于 25 的物料和库存合计，并从低到高排序"},
+
+  {"id": 16, "category": "BOM 反查", "expected_view": "AiQueryBomV", "question": "查询物料 110000001 被哪些上级部件使用"},
+  {"id": 17, "category": "BOM 反查", "expected_view": "AiQueryBomV", "question": "查询子物料 110000012 对应的上级部件编码和描述"},
+  {"id": 18, "category": "BOM 明细", "expected_view": "AiQueryBomV", "question": "查询上级部件 110000001 使用了哪些子物料"},
+
+  {"id": 19, "category": "采购价格", "expected_view": "AiQueryPoPriceV", "question": "查询物料 6100001876 的最新采购价和平均价"},
+  {"id": 20, "category": "采购价格", "expected_view": "AiQueryPoPriceV", "question": "查询物料 K332400106 的最新采购价、供应商和采购单"},
+  {"id": 21, "category": "采购价格", "expected_view": "AiQueryPoPriceV", "question": "查询物料 Z01.02.0026 的最新采购价、供应商和提前期"},
+  {"id": 22, "category": "采购模糊查询", "expected_view": "AiQueryPoPriceV", "question": "查询供应商名称中包含“威图”的物料、最新采购价和采购单"},
+  {"id": 23, "category": "采购排行", "expected_view": "AiQueryPoPriceV", "question": "查询最新采购价最高的前 10 种物料及其供应商"},
+  {"id": 24, "category": "采购统计", "expected_view": "AiQueryPoPriceV", "question": "当前快照中有最新采购价的物料平均采购价是多少"},
+
+  {"id": 25, "category": "采购进度", "expected_view": "AiQueryPoProgressV", "question": "查询采购单 2040760 的订购数量、已收数量、在检数量和净收货数量"},
+  {"id": 26, "category": "采购进度", "expected_view": "AiQueryPoProgressV", "question": "查询采购单 2040761 的物料、订购数量、已收数量和到货日期"},
+  {"id": 27, "category": "采购进度", "expected_view": "AiQueryPoProgressV", "question": "查询采购单 1081022 的供应商、物料、订购数量和净收货数量"},
+  {"id": 28, "category": "采购模糊查询", "expected_view": "AiQueryPoProgressV", "question": "查询供应商名称包含“格里森前进齿轮”的采购单、物料和收货进度"},
+  {"id": 29, "category": "采购进度", "expected_view": "AiQueryPoProgressV", "question": "查询物料 K332400106 的采购单、需求日期和净收货数量"},
+  {"id": 30, "category": "采购异常筛选", "expected_view": "AiQueryPoProgressV", "question": "列出净收货数量小于订购数量的采购物料行，并显示采购单、物料和两项数量"},
+
+  {"id": 31, "category": "采购概览", "expected_view": "AiQueryPoOverViewV", "question": "查询采购单 1081022 的审批状态、收货数量、开票数量和剩余数量"},
+  {"id": 32, "category": "采购概览", "expected_view": "AiQueryPoOverViewV", "question": "查询采购单 2040760 的审批状态、供应商和剩余数量"},
+  {"id": 33, "category": "采购概览", "expected_view": "AiQueryPoOverViewV", "question": "查询采购单 2040761 各物料的收货数量、开票数量和剩余数量"},
+  {"id": 34, "category": "采购分组统计", "expected_view": "AiQueryPoOverViewV", "question": "按采购审批状态统计采购物料行数量"},
+
+  {"id": 35, "category": "工单报工", "expected_view": "AiQueryJobProgressV", "question": "查询工单 000022 的物料、生产数量、报工数量和末道工序完工数量"},
+  {"id": 36, "category": "工单报工", "expected_view": "AiQueryJobProgressV", "question": "查询工单 000023 的物料描述、生产数量和报工数量"},
+  {"id": 37, "category": "生产追踪", "expected_view": "AiQueryJobTrackingV", "question": "在生产追踪中查询工单 016937 的计划数量和完工数量"},
+  {"id": 38, "category": "项目工单", "expected_view": "AiQueryProjectJobV", "question": "查询项目 24M007-E 下的工单、生产数量和完工入库数量"},
+  {"id": 39, "category": "项目工单", "expected_view": "AiQueryJobV", "question": "查询项目 24M148-B 下的工单及要求交期"},
+  {"id": 40, "category": "物料时间轴", "expected_view": "AiQueryPartTimeTrackingV", "question": "查询物料 1100000155 的时间轴、需求数量、收货数量和结余数量"},
+
+  {"id": 41, "category": "项目查询", "expected_view": "AiQueryProjectV", "question": "查询项目 24M148-B 的项目客户、项目机型和项目状态"},
+  {"id": 42, "category": "项目模糊查询", "expected_view": "AiQueryProjectV", "question": "查询客户名称包含“Kutch Copper”的项目编号、机型和状态"},
+  {"id": 43, "category": "项目统计", "expected_view": "AiQueryProjectV", "question": "机型为三辊行星轧机的项目共有多少个"},
+  {"id": 44, "category": "项目财务", "expected_view": "AiQueryProjRevCstV", "question": "查询项目 26M001-C-W 的发生成本、结转成本和已确认收入"},
+  {"id": 45, "category": "项目财务", "expected_view": "AiQueryProjRevCstV", "question": "查询客户名称包含“PDM”的项目及其发生成本和未结转成本"},
+
+  {"id": 46, "category": "供应商应付", "expected_view": "AiQueryPayablesV", "question": "查询供应商“上海影旗传动机械有限公司”的应付金额和剩余应付金额"},
+  {"id": 47, "category": "供应商应付", "expected_view": "AiQueryPayablesV", "question": "查询供应商“上海洪瀚流体控制设备有限公司”的币种、应付金额和剩余应付金额"},
+  {"id": 48, "category": "客户应收", "expected_view": "AiQueryReceivablesV", "question": "查询客户“盐城市苏瑞贸易有限公司”的应收金额和剩余应收金额"},
+  {"id": 49, "category": "客户应收", "expected_view": "AiQueryReceivablesV", "question": "查询客户“宁波博威合金材料股份有限公司”的币种、应收金额和剩余应收金额"},
+  {"id": 50, "category": "销售履约", "expected_view": "AiQuerySoOverViewV", "question": "查询销售订单 909 的客户、订单数量、发货数量、退货数量和开票数量"}
+]

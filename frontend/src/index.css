@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+:root {
+  font-family: "Fira Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  color: var(--text, #10213f);
+  background: var(--background, #f3f6fb);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  overscroll-behavior: none;
+}
+
+html {
+  height: 100%;
+  min-width: 320px;
+  overflow: hidden;
+  background: var(--background, #f3f6fb);
+}
+
+body {
+  margin: 0;
+  height: 100%;
+  min-width: 320px;
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  touch-action: manipulation;
+}
+
+button:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+.table-scroll:focus-visible {
+  outline: 3px solid var(--focus-outline, rgba(30, 64, 175, 0.35));
+  outline-offset: 2px;
+}
+
+::selection {
+  color: var(--on-primary, #ffffff);
+  background: var(--primary, #1e40af);
+}

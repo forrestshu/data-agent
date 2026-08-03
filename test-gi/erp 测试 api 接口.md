@@ -1,0 +1,2 @@
+- 测试地址：`http://192.168.1.142:9090/knowledge/knowledgeBase`
+- 测试入口：`http://192.168.1.142:14001/workflow/chat-messages`，`appType=erp`，模型 `Qwen`
