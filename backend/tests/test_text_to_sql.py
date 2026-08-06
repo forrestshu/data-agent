@@ -5,13 +5,16 @@ from __future__ import annotations
 import unittest
 from typing import Any
 
-from data_agent.ai_agent import AIQueryAgent, IntentAnalysis
-from data_agent.catalog import build_query_knowledge, load_catalog
-from data_agent.executor import ReadOnlyQueryService
-from data_agent.knowledge_sync import KnowledgeSyncService
-from data_agent.router import RouteDecision
-from data_agent.settings import DEFAULT_DATABASE_PATH
-from data_agent.sql_guard import SQLGuard, SQLValidationError
+from data_agent.query.agents.exact import AIQueryAgent
+from data_agent.knowledge.catalog import load_catalog
+from data_agent.query.agents.dashboard import DashboardAgent
+from data_agent.query.execution.executor import ReadOnlyQueryService
+from data_agent.database import Database
+from data_agent.knowledge.profile import load_profile
+from data_agent.knowledge.prompt import PROMPT_ROOT, build_prompt_knowledge, load_prompt
+from data_agent.query.contracts import RouteDecision
+from data_agent.settings import DATABASE_PROFILE_PATH
+from data_agent.query.execution.guard import SQLGuard, SQLValidationError
 
 
 class RepairingLLMClient:
@@ -105,7 +108,6 @@ class ScalarAggregateRepairingLLMClient:
         if self.json_calls == 1:
             return {
                 **common,
-                # 故意省略 result_shape，证明原问题语义兜底也能拦住旧模型输出。
                 "sql": (
                     "SELECT PartNum, PartDescription, SUM(Qty) AS TotalQty "
                     "FROM AiQueryPartOnHandV WHERE PartDescription LIKE ? "
@@ -114,7 +116,6 @@ class ScalarAggregateRepairingLLMClient:
             }
         return {
             **common,
-            "result_shape": "scalar",
             "sql": (
                 "SELECT SUM(Qty) AS TotalQty FROM AiQueryPartOnHandV "
                 "WHERE PartDescription LIKE ?"
@@ -149,7 +150,7 @@ class TolerantMetadataLLMClient:
         user_prompt: str,
         max_tokens: int = 1200,
     ) -> dict[str, Any]:
-        """返回 `=` 和 single_value，但 SQL 本身满足安全与业务粒度要求。"""
+        """返回 `=` 和无效辅助项，但 SQL 本身满足安全与业务粒度要求。"""
 
         self.json_calls += 1
         return {
@@ -165,8 +166,6 @@ class TolerantMetadataLLMClient:
                 "模型偶发生成的无效辅助项",
             ],
             "requested_fields": ["PartNum", "PartDescription", "Qty"],
-            "result_shape": "single_value",
-            "operation": "模型自由描述的未知操作",
             "source_views": ["模型自报值不作为事实"],
             "sql": (
                 "SELECT SUM(Qty) AS TotalQty FROM AiQueryPartOnHandV "
@@ -194,37 +193,13 @@ class TextToSQLTests(unittest.TestCase):
         """加载当前语义层与真实数据库画像，所有测试保持只读。"""
 
         cls.catalog = load_catalog()
-        cls.profile = KnowledgeSyncService(DEFAULT_DATABASE_PATH).ensure_current(auto_sync=True)
+        cls.profile = load_profile(DATABASE_PROFILE_PATH)
         cls.guard = SQLGuard(cls.catalog, cls.profile)
         cls.service = ReadOnlyQueryService(
-            DEFAULT_DATABASE_PATH,
+            Database.from_environment(),
             cls.catalog,
             database_profile=cls.profile,
         )
-
-    def test_knowledge_context_contains_semantics_but_no_business_rows(self) -> None:
-        """模型提示应包含用途、粒度、字段类型与质量，但不包含业务数据样本。"""
-
-        knowledge = build_query_knowledge(self.catalog, self.profile)
-        part_view = next(item for item in knowledge["views"] if item["name"] == "AiQueryPartV")
-        self.assertIn("物料", part_view["domain"])
-        self.assertTrue(any(item["name"] == "PartDescription" for item in part_view["columns"]))
-        self.assertNotIn("null_count", part_view["columns"][0])
-        self.assertNotIn("path", knowledge)
-        self.assertEqual([], knowledge["business_rules"])
-        self.assertEqual(12, len(knowledge["relationships"]))
-        company = next(item for item in part_view["columns"] if item["name"] == "Company")
-        self.assertEqual(["join"], company["roles"])
-        self.assertIn("公司", company["description"])
-        purchase_progress = next(
-            item for item in knowledge["views"] if item["name"] == "AiQueryPoProgressV"
-        )
-        self.assertIn("查询供应商", purchase_progress["purpose"])
-        purchase_columns = {
-            item["name"]: item["roles"] for item in purchase_progress["columns"]
-        }
-        self.assertIn("filter", purchase_columns["LineDesc"])
-        self.assertIn("output", purchase_columns["VendorName"])
 
     def test_prompt_prefers_precomputed_business_fields_and_preserves_parameters(self) -> None:
         """提示词必须阻止二次聚合、参数截断、错误编码字段和应收应付串域。"""
@@ -233,18 +208,57 @@ class TextToSQLTests(unittest.TestCase):
             self.catalog,
             llm_client=None,
             database_profile=self.profile,
-            allow_fallback=False,
         )
         prompt = agent._system_prompt()
 
-        self.assertIn("直接查询 AiQueryPoPriceV.AvgPrice", prompt)
-        self.assertIn("不生成 AVG(AvgPrice)", prompt)
-        self.assertIn("汇总字段擅自 SUM", prompt)
-        self.assertIn("“钢板30”不能缩短为“钢板”", prompt)
-        self.assertIn("分别筛选 ProjectID、JobNum、PartNum", prompt)
+        self.assertLess(len(prompt), 5000)
+        self.assertIn("AvgPrice直接查询", prompt)
+        self.assertIn("不用AVG(AvgPrice)", prompt)
+        self.assertIn("默认不二次SUM", prompt)
+        self.assertIn("参数必须完整原样保留", prompt)
+        self.assertIn("才分别用ProjectID、JobNum、PartNum", prompt)
         self.assertIn("PONum、OrderQty、ReceivedQty、InvoiceQty、RemainQty", prompt)
-        self.assertIn("不得只因公司名称相似就在应付与应收之间切换", prompt)
-        self.assertIn("优先匹配 JobOprCompQty", prompt)
+        self.assertIn("应付只用Payables", prompt)
+        self.assertIn("工单末道完成量用JobOprCompQty", prompt)
+        self.assertIn("威图悬臂箱底座，A250063", prompt)
+
+    def test_all_static_prompts_are_markdown_assets(self) -> None:
+        """静态模型指令必须可在 Python 外单独审查和维护。"""
+
+        expected = {
+            "answer.md",
+            "answer_retry.md",
+            "column_labels.md",
+            "dashboard.md",
+            "failure.md",
+            "plan_repair.md",
+            "text_to_sql.md",
+        }
+        self.assertEqual(expected, {path.name for path in PROMPT_ROOT.glob("*.md")})
+        for name in expected - {"dashboard.md", "text_to_sql.md", "plan_repair.md"}:
+            self.assertTrue(load_prompt(name))
+
+    def test_compact_prompt_knowledge_keeps_all_views_and_fields(self) -> None:
+        """极简语义卡片必须保留第 3 节的全部视图和业务字段。"""
+
+        knowledge = build_prompt_knowledge(self.catalog)
+        self.assertLess(len(knowledge), 3600)
+        for view in self.catalog.views:
+            self.assertIn(view.name, knowledge)
+            for column in view.column_semantics:
+                self.assertIn(column, knowledge)
+
+    def test_dashboard_prompt_uses_same_compact_semantic_projection(self) -> None:
+        """Dashboard 不能重新发送完整治理 JSON，整体提示词也必须低于 5000 字符。"""
+
+        prompt = DashboardAgent(
+            self.catalog,
+            None,
+            database_profile=self.profile,
+        )._system_prompt()
+        self.assertLess(len(prompt), 5000)
+        for view in self.catalog.views:
+            self.assertIn(view.name, prompt)
 
     def test_semantic_catalog_covers_every_documented_column(self) -> None:
         """权威文档中的 16 张视图和 154 个字段必须完整进入正式语义层。"""
@@ -357,7 +371,6 @@ class TextToSQLTests(unittest.TestCase):
             route,
             limit=20,
         )
-        self.assertEqual("text_to_sql", result.plan.operation)
         self.assertGreater(len(result.rows), 0)
         self.assertLessEqual(len(result.rows), 20)
         self.assertTrue(all("螺栓" in str(row["PartDescription"]) for row in result.rows))
@@ -500,12 +513,10 @@ class TextToSQLTests(unittest.TestCase):
             self.catalog,
             fake,
             database_profile=self.profile,
-            allow_fallback=False,
         )
         understanding = agent.understand("有没有螺栓之类的", limit=20)
         self.assertEqual(2, fake.json_calls)
-        self.assertEqual("text_to_sql", understanding.operation)
-        self.assertIn("PartDescription LIKE ?", understanding.generated_sql or "")
+        self.assertIn("PartDescription LIKE ?", understanding.generated_sql)
         self.assertEqual(("%螺栓%",), understanding.sql_parameters)
 
     def test_agent_repairs_grouped_sql_for_scalar_inventory_total(self) -> None:
@@ -516,7 +527,6 @@ class TextToSQLTests(unittest.TestCase):
             self.catalog,
             fake,
             database_profile=self.profile,
-            allow_fallback=False,
         )
 
         understanding = agent.understand("查询GCr15圆钢Φ45还有多少库存")
@@ -529,14 +539,13 @@ class TextToSQLTests(unittest.TestCase):
         self.assertNotIn("PartDescription,", understanding.generated_sql or "")
 
     def test_correct_sql_ignores_nonstandard_auxiliary_metadata(self) -> None:
-        """正确 SQL 不应因 `=`、single_value 或无效辅助筛选项触发 query_failed。"""
+        """正确 SQL 不应因 `=` 或无效辅助筛选项触发 query_failed。"""
 
         fake = TolerantMetadataLLMClient()
         agent = AIQueryAgent(
             self.catalog,
             fake,
             database_profile=self.profile,
-            allow_fallback=False,
         )
 
         understanding = agent.understand("查询GCr15圆钢Φ45还有多少库存")
@@ -544,45 +553,6 @@ class TextToSQLTests(unittest.TestCase):
         self.assertEqual(1, fake.json_calls)
         self.assertEqual(("AiQueryPartOnHandV",), understanding.source_views)
         self.assertIn("SUM(Qty) AS TotalQty", understanding.generated_sql or "")
-
-    def test_ready_metadata_is_rebuilt_from_validated_sql_ast(self) -> None:
-        """模型自报字段和粒度不可信，ready 计划必须由 AST 覆盖为真实值。"""
-
-        agent = AIQueryAgent(
-            self.catalog,
-            llm_client=None,
-            database_profile=self.profile,
-            allow_fallback=False,
-        )
-        analysis = IntentAnalysis.model_validate(
-            {
-                "status": "ready",
-                "source_views": ["AiQueryPartV"],
-                "requested_fields": ["PartNum", "PartDescription"],
-                "filter_constraints": [
-                    {"column": "PartNum", "operator": "LIKE", "value": "错误线索"}
-                ],
-                "result_shape": "grouped",
-                "sql": (
-                    "SELECT SUM(Qty) AS TotalQty FROM AiQueryPartOnHandV "
-                    "WHERE PartDescription = ?"
-                ),
-                "parameters": ["GCr15圆钢Φ45"],
-            }
-        )
-
-        validated = agent._validate_ready(
-            analysis,
-            limit=500,
-            effective_question="查询GCr15圆钢Φ45还有多少库存",
-        )
-
-        self.assertEqual(["AiQueryPartOnHandV"], validated.source_views)
-        self.assertEqual(["Qty"], validated.requested_fields)
-        self.assertEqual("scalar", validated.result_shape)
-        self.assertEqual("PartDescription", validated.filter_constraints[0].column)
-        self.assertEqual("eq", validated.filter_constraints[0].operator)
-
 
 if __name__ == "__main__":
     unittest.main()

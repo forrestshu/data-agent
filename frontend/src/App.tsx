@@ -4,23 +4,17 @@ import {
   AlertCircle,
   BarChart3,
   Check,
-  Database,
   Download,
-  FileCheck2,
   FileCode2,
   LoaderCircle,
   LayoutDashboard,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
-  RefreshCw,
   Search,
-  Settings2,
-  ShieldCheck,
   Square,
   Sparkles,
   Sun,
-  TableProperties,
   TrendingUp,
   X,
 } from 'lucide-react'
@@ -28,35 +22,21 @@ import {
   askDashboardQuestion,
   askQuestion,
   getAIStatus,
-  getCatalog,
   getDashboard,
-  getDataSources,
-  getKnowledgeStatus,
-  getKnowledgeSyncJob,
   getQueryExportUrl,
-  getSemanticProposals,
-  reviewSemanticProposal,
-  switchDataSource,
-  syncKnowledge,
 } from './api'
 import type {
   AIStatus,
-  CatalogResponse,
   ClarificationTurn,
   ClarificationAnalysis,
-  DataSourceId,
-  DataSourcesResponse,
   DashboardSpec,
   DashboardWidget,
-  KnowledgeSyncJob,
-  KnowledgeStatus,
   QueryResult,
   RouteDecision,
-  SemanticReviewState,
 } from './types'
 import './App.css'
 
-type AppSection = 'query' | 'dashboard' | 'knowledge' | 'settings'
+type AppSection = 'query' | 'dashboard'
 type ColorTheme = 'light' | 'dark'
 
 const NUMBER_FORMATTER = new Intl.NumberFormat('zh-CN', {
@@ -88,9 +68,7 @@ function getInitialTheme(): ColorTheme {
 
 const SECTION_META: Record<AppSection, { title: string; icon: typeof Search }> = {
   query: { title: '数据查询', icon: Search },
-  dashboard: { title: 'Dashboard', icon: LayoutDashboard },
-  knowledge: { title: '数据管理', icon: ShieldCheck },
-  settings: { title: '系统信息', icon: Settings2 },
+  dashboard: { title: '数据看板', icon: LayoutDashboard },
 }
 
 /** 展示层：把数据库单元格转换为保留空值含义的客户可读文本。 */
@@ -196,20 +174,6 @@ function getFixedResultColumnWidths(
   return columns.map(() => columnWidth)
 }
 
-/** 展示层：把画像 ISO 时间转换为当前浏览器时区。 */
-function formatDateTime(value?: string): string {
-  if (!value) return '尚未同步'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
-}
-
 /** 澄清文案层：把模型返回的直接问题与“例如/比如”说明拆成两个视觉层级。 */
 function splitClarificationPrompt(value?: string | null): { question: string; helper: string | null } {
   const prompt = value?.trim() || '请补充查询对象或指标。'
@@ -255,17 +219,6 @@ function dashboardClarificationKind(
   return /阈值|判定标准|多少(?:件|天|元|%|％)?/.test(prompt) ? 'number' : 'text'
 }
 
-/** 状态组件：用图标和文字共同表达当前数据源是否可安全查询。 */
-function StatusBadge({ status }: { status?: KnowledgeStatus['status'] }) {
-  const ready = status === 'ready'
-  return (
-    <span className={`status-text ${ready ? 'is-ready' : 'is-warning'}`}>
-      {ready ? <Check size={14} /> : <AlertCircle size={14} />}
-      {ready ? '数据源已就绪' : '数据源需检查'}
-    </span>
-  )
-}
-
 /** 对话展示层：成功回答和查询失败原因共用同一个自然语言回答框。 */
 function AssistantAnswer({
   answer,
@@ -294,7 +247,7 @@ function AssistantAnswer({
     <section className="answer-section" aria-labelledby="answer-title" aria-live="polite">
       <div className="section-heading">
         <h2 id="answer-title" className="answer-heading">
-          <img src="/n-order-logo.png" alt="N-ORDER" width="128" height="14" />
+          <img src="/in-order-logo.png" alt="IN-ORDER" width="128" height="14" />
           <span aria-hidden="true">：</span>
         </h2>
       </div>
@@ -542,7 +495,7 @@ function DashboardGenerationGrid() {
       <div className="dashboard-generation-status">
         <Sparkles size={17} aria-hidden="true" />
         <div>
-          <strong>正在生成新的 Dashboard</strong>
+          <strong>正在生成新的数据看板</strong>
           <span>面板会按重要程度依次就位</span>
         </div>
       </div>
@@ -581,9 +534,9 @@ function DashboardView({
 }) {
   if (!dashboard) {
     return (
-      <section className="dashboard-section" aria-label="正在准备 Dashboard">
+      <section className="dashboard-section" aria-label="正在准备数据看板">
         <div className="dashboard-heading dashboard-heading-with-composer">
-          <h2>正在准备 Dashboard</h2>
+          <h2>正在准备数据看板</h2>
           {composer}
         </div>
         <DashboardGenerationGrid />
@@ -1001,7 +954,7 @@ function DashboardClarificationPanel({
         <div className="dashboard-clarification-heading">
           <AlertCircle size={19} aria-hidden="true" />
           <div>
-            <h2 id="dashboard-confirm-title">确认 Dashboard 查询方向</h2>
+            <h2 id="dashboard-confirm-title">确认数据看板查询方向</h2>
             <p>{confirmation.confirmation_question ?? confirmation.reason}</p>
           </div>
         </div>
@@ -1126,7 +1079,7 @@ function DashboardPage({
       }}
     >
       <div className="section-heading input-heading">
-        <label htmlFor="dashboard-question">询问 Dashboard</label>
+        <label htmlFor="dashboard-question">询问数据看板</label>
       </div>
       <div className="composer-box">
         <textarea
@@ -1151,8 +1104,8 @@ function DashboardPage({
           className={`primary-action ${loading ? 'is-loading' : question.trim() ? 'is-ready' : 'is-idle'}`}
           type="submit"
           disabled={loading || !question.trim()}
-          aria-label={loading ? '正在重排 Dashboard' : question.trim() ? '生成 Dashboard' : '输入问题后生成 Dashboard'}
-          title={loading ? '正在重排 Dashboard' : question.trim() ? '生成 Dashboard' : '输入问题后生成 Dashboard'}
+          aria-label={loading ? '正在重排数据看板' : question.trim() ? '生成数据看板' : '输入问题后生成数据看板'}
+          title={loading ? '正在重排数据看板' : question.trim() ? '生成数据看板' : '输入问题后生成数据看板'}
         >
           {loading
             ? <Square size={12} fill="currentColor" strokeWidth={0} aria-hidden="true" />
@@ -1165,7 +1118,7 @@ function DashboardPage({
   return (
     <section
       className={`dashboard-page${hasQueryDashboard ? ' has-query-dashboard' : ''}${composerExpanded ? ' is-composer-expanded' : ' is-composer-compact'}${clarification || confirmation || notice ? ' has-interruption' : ''}`}
-      aria-label="动态 Dashboard"
+      aria-label="动态数据看板"
     >
       {notice && (
         <div className="dashboard-notice" role="status">
@@ -1192,326 +1145,7 @@ function DashboardPage({
   )
 }
 
-/** 知识健康组件：集中展示画像指标、兼容状态和同步入口。 */
-function KnowledgeOverview({
-  status,
-  syncJob,
-  onSync,
-}: {
-  status: KnowledgeStatus | null
-  syncJob: KnowledgeSyncJob | null
-  onSync: () => Promise<void>
-}) {
-  const syncing = syncJob?.status === 'queued' || syncJob?.status === 'running'
-  const syncLabel = syncing && syncJob.total_views > 0
-    ? `同步中 ${syncJob.completed_views}/${syncJob.total_views}`
-    : syncing
-      ? '同步中'
-      : '同步语义'
-  const driftCount =
-    (status?.drift?.new_tables?.length ?? 0) +
-    (status?.drift?.removed_tables?.length ?? 0) +
-    Object.keys(status?.drift?.new_columns ?? {}).length +
-    Object.keys(status?.drift?.removed_columns ?? {}).length
-  const invalidCount = status?.compatibility?.invalid_views?.length ?? 0
-
-  return (
-    <section className="line-section" aria-labelledby="health-title">
-      <div className="section-heading">
-        <h2 id="health-title">语义层状态</h2>
-        <button className="secondary-action" onClick={() => void onSync()} disabled={syncing}>
-          {syncing ? <LoaderCircle size={16} className="spin" /> : <RefreshCw size={16} />}
-          {syncLabel}
-        </button>
-      </div>
-      <div className="section-frame">
-        <div className="metric-row">
-          <div><span>状态</span><StatusBadge status={status?.status} /></div>
-          <div><span>业务视图</span><strong>{status?.summary?.business_table_count ?? '—'}</strong></div>
-          <div><span>{status?.source_kind === 'sqlserver' ? '已统计数据行' : '数据行'}</span><strong>{status?.summary?.total_row_count?.toLocaleString('zh-CN') ?? '—'}</strong></div>
-          <div><span>结构变化</span><strong>{driftCount}</strong></div>
-          <div><span>不兼容视图</span><strong>{invalidCount}</strong></div>
-        </div>
-        <div className="plain-list">
-          <div><span>画像更新时间</span><strong>{formatDateTime(status?.generated_at)}</strong></div>
-          <div><span>查询策略</span><strong>新结构审核后开放，SQLite 始终只读</strong></div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-/** 视图解析组件：用紧凑表格展示已审核业务知识，不使用重复卡片。 */
-function CatalogSection({ catalog }: { catalog: CatalogResponse | null }) {
-  const rowCounts = useMemo(
-    () => new Map(catalog?.tables.map((table) => [table.name, table.row_count]) ?? []),
-    [catalog],
-  )
-
-  return (
-    <section className="line-section" aria-labelledby="catalog-title">
-      <div className="section-heading">
-        <h2 id="catalog-title">视图语义</h2>
-        <span>{catalog?.views.length ?? 0} 个已审核视图</span>
-      </div>
-      <div className="section-frame table-scroll catalog-table" tabIndex={0}>
-        <table>
-          <thead><tr><th>视图</th><th>中文名称</th><th>领域</th><th>粒度</th><th>用途</th><th>数据量</th></tr></thead>
-          <tbody>
-            {catalog?.views.map((view) => (
-              <tr key={view.name}>
-                <td className="mono">{view.name}</td>
-                <td>{view.chinese_name}</td>
-                <td>{view.domain}</td>
-                <td>{view.grain}</td>
-                <td>{view.purpose}</td>
-                <td className="numeric">{rowCounts.get(view.name)?.toLocaleString('zh-CN') ?? '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  )
-}
-
-/** 关系语义组件：展示后端实际用于 JOIN 校验的键、状态和粒度风险。 */
-function RelationshipSection({ catalog }: { catalog: CatalogResponse | null }) {
-  const executable = catalog?.relationships.filter(
-    (relationship) => relationship.status !== 'advisory_not_enforceable',
-  ) ?? []
-
-  return (
-    <section className="line-section" aria-labelledby="relationship-title">
-      <div className="section-heading">
-        <h2 id="relationship-title">联表关系</h2>
-        <span>{executable.length} 条可执行关系 · {catalog?.relationships.length ?? 0} 条总记录</span>
-      </div>
-      <div className="section-frame table-scroll catalog-table" tabIndex={0}>
-        <table>
-          <thead><tr><th>业务关系</th><th>视图</th><th>完整连接键</th><th>状态</th><th>粒度提醒</th></tr></thead>
-          <tbody>
-            {catalog?.relationships.map((relationship) => (
-              <tr key={relationship.id}>
-                <td>{relationship.topic}</td>
-                <td className="mono">{relationship.left_view} ↔ {relationship.right_view}</td>
-                <td className="mono">
-                  {relationship.keys.map(([left, right]) => `${left}=${right}`).join(' + ')}
-                </td>
-                <td>
-                  {relationship.status === 'approved'
-                    ? '已批准'
-                    : relationship.status === 'approved_with_risk'
-                      ? '批准·有放大风险'
-                      : '仅供核对'}
-                </td>
-                <td>{relationship.grain_warning}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  )
-}
-
-/** 语义审核组件：AI 只提供候选，批准操作才会修改正式查询知识。 */
-function SemanticReviewSection({
-  state,
-  reviewingId,
-  onReview,
-}: {
-  state: SemanticReviewState | null
-  reviewingId: string | null
-  onReview: (proposalId: string, decision: 'approve' | 'reject') => Promise<void>
-}) {
-  const pending = state?.proposals.filter((proposal) => proposal.status === 'pending') ?? []
-
-  return (
-    <section className="line-section" aria-labelledby="semantic-title">
-      <div className="section-heading">
-        <h2 id="semantic-title">新增语义审核</h2>
-        <span>{pending.length} 项待审核</span>
-      </div>
-      <div className="section-frame">
-        {pending.length === 0 ? (
-          <div className="empty-row">
-            <FileCheck2 size={18} />
-            当前没有待审核语义；普通数据行变化不需要调用大模型。
-          </div>
-        ) : (
-          <div className="proposal-list">
-            {pending.map((proposal) => (
-              <article key={proposal.id}>
-                <div>
-                  <span>{proposal.kind === 'new_table' ? '新增视图' : '新增字段'}</span>
-                  <h3>{proposal.target_view}{proposal.target_column ? `.${proposal.target_column}` : ''}</h3>
-                  <p>{proposal.reason}</p>
-                  {proposal.review_question && <p className="review-question">{proposal.review_question}</p>}
-                </div>
-                <div className="proposal-actions">
-                  <button
-                    disabled={reviewingId !== null}
-                    onClick={() => void onReview(proposal.id, 'approve')}
-                  >
-                    {reviewingId === proposal.id ? <LoaderCircle size={16} className="spin" /> : <Check size={16} />}
-                    批准
-                  </button>
-                  <button
-                    className="text-action"
-                    disabled={reviewingId !== null}
-                    onClick={() => void onReview(proposal.id, 'reject')}
-                  >
-                    拒绝
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
-  )
-}
-
-/** 知识治理页面：按健康、解析、审核顺序组织知识生命周期。 */
-function KnowledgePage({
-  status,
-  catalog,
-  semanticReview,
-  syncJob,
-  reviewingId,
-  onSync,
-  onReview,
-}: {
-  status: KnowledgeStatus | null
-  catalog: CatalogResponse | null
-  semanticReview: SemanticReviewState | null
-  syncJob: KnowledgeSyncJob | null
-  reviewingId: string | null
-  onSync: () => Promise<void>
-  onReview: (proposalId: string, decision: 'approve' | 'reject') => Promise<void>
-}) {
-  return (
-    <div className="page-stack">
-      <KnowledgeOverview status={status} syncJob={syncJob} onSync={onSync} />
-      <SemanticReviewSection state={semanticReview} reviewingId={reviewingId} onReview={onReview} />
-      <RelationshipSection catalog={catalog} />
-      <CatalogSection catalog={catalog} />
-    </div>
-  )
-}
-
-/** 系统信息页面：只读展示数据库和 DeepSeek 配置概况，绝不返回 API Key。 */
-function SettingsPage({
-  status,
-  aiStatus,
-  semanticReview,
-  dataSources,
-  switchingSource,
-  onSwitchSource,
-}: {
-  status: KnowledgeStatus | null
-  aiStatus: AIStatus | null
-  semanticReview: SemanticReviewState | null
-  dataSources: DataSourcesResponse | null
-  switchingSource: DataSourceId | null
-  onSwitchSource: (sourceId: DataSourceId) => Promise<void>
-}) {
-  const activeSource = dataSources?.sources.find(
-    (source) => source.source_id === dataSources.active_source_id,
-  )
-  const isLive = activeSource?.source_kind === 'sqlserver'
-  return (
-    <div className="page-stack">
-      <section className="line-section" aria-labelledby="source-title">
-        <div className="section-heading">
-          <h2 id="source-title">数据源</h2>
-        </div>
-        <div className="section-frame source-switcher">
-          {dataSources?.sources.map((source) => {
-            const active = source.source_id === dataSources.active_source_id
-            const switching = switchingSource === source.source_id
-            return (
-              <button
-                key={source.source_id}
-                type="button"
-                className={`source-option ${active ? 'is-active' : ''}`}
-                disabled={switchingSource !== null || !source.configured}
-                onClick={() => { if (!active) void onSwitchSource(source.source_id) }}
-              >
-                <span className="source-option-main">
-                  <strong>{source.dataset_label}</strong>
-                  <small>{source.display_name}</small>
-                </span>
-                <span className="source-option-meta">
-                  <code>{source.target}</code>
-                  <span>{source.database}{source.schema ? ` · ${source.schema}` : ''}</span>
-                </span>
-                <span className={`source-option-status ${source.status === 'ready' ? 'is-ready' : ''}`}>
-                  {switching ? '切换中' : active ? '当前使用' : source.status === 'ready' ? '可切换' : '需检查'}
-                </span>
-              </button>
-            )
-          }) ?? <div className="empty-row">正在读取数据源配置…</div>}
-        </div>
-      </section>
-
-      <section className="line-section" aria-labelledby="database-title">
-        <div className="section-heading">
-          <h2 id="database-title">数据库概况</h2>
-        </div>
-        <div className="section-frame">
-          <div className="settings-list">
-            <div><span>当前数据集</span><strong>{activeSource?.dataset_label ?? status?.dataset_label ?? '—'}</strong></div>
-            <div><span>数据库类型</span><strong>{isLive ? 'SQL Server' : 'SQLite'}</strong></div>
-            <div><span>{isLive ? '服务器' : '数据库文件'}</span><code>{isLive ? status?.database?.server ?? activeSource?.target ?? '—' : status?.database?.file_name ?? '—'}</code></div>
-            <div><span>数据库</span><strong>{status?.database?.database_name ?? activeSource?.database ?? status?.database?.file_name ?? '—'}</strong></div>
-            <div><span>Schema</span><strong>{status?.database?.schema ?? activeSource?.schema ?? '—'}</strong></div>
-            <div><span>业务视图</span><strong>{status?.summary?.business_table_count ?? '—'}</strong></div>
-            <div><span>{isLive ? '已统计数据行' : '总数据行'}</span><strong>{status?.summary?.total_row_count?.toLocaleString('zh-CN') ?? '—'}</strong></div>
-            {isLive && <div><span>统计未知视图</span><strong>{status?.summary?.statistics_unknown_view_count ?? 0}</strong></div>}
-            <div><span>全空字段</span><strong>{status?.summary?.all_null_column_count ?? '—'}</strong></div>
-            <div><span>{isLive ? '结构指纹' : '内容指纹'}</span><code>{isLive ? status?.database?.schema_fingerprint ?? '—' : status?.database?.content_fingerprint ?? '—'}</code></div>
-            <div><span>{isLive ? '画像更新时间' : '快照时间'}</span><strong>{isLive ? formatDateTime(status?.generated_at) : status?.database?.snapshot_started_at ?? '—'}</strong></div>
-          </div>
-        </div>
-      </section>
-
-      <section className="line-section" aria-labelledby="api-title">
-        <div className="section-heading">
-          <h2 id="api-title">AI 与接口</h2>
-        </div>
-        <div className="section-frame">
-          <div className="settings-list">
-            <div><span>AI 服务</span><strong>{aiStatus?.provider ?? '未配置'}</strong></div>
-            <div><span>模型</span><code>{aiStatus?.model ?? '—'}</code></div>
-            <div><span>客户查询策略</span><strong>{aiStatus?.required ? '强制使用 AI' : '允许规则模式'}</strong></div>
-            <div><span>AI 用途</span><strong>{aiStatus?.role ?? '—'}</strong></div>
-            <div><span>查询接口</span><code>POST /api/query</code></div>
-            <div><span>知识同步接口</span><code>POST /api/knowledge/sync</code></div>
-            <div><span>语义审核状态</span><strong>{semanticReview?.status ?? '—'}</strong></div>
-          </div>
-        </div>
-      </section>
-
-      <section className="line-section" aria-labelledby="boundary-title">
-        <div className="section-heading">
-          <h2 id="boundary-title">系统边界</h2>
-        </div>
-        <div className="section-frame">
-          <div className="boundary-list">
-            <p><ShieldCheck size={17} />{isLive ? 'SQL Server 仅访问 prod.Cux 已审核视图，并执行参数化 T-SQL SELECT。' : 'SQLite 使用只读连接，只执行白名单参数化 SELECT。'}</p>
-            <p><Sparkles size={17} />DeepSeek 负责意图理解和基于查询证据的自然语言回答。</p>
-            <p><TableProperties size={17} />新增表或字段先生成语义建议，人工批准后才开放查询。</p>
-          </div>
-        </div>
-      </section>
-    </div>
-  )
-}
-
-/** 应用根组件：保存跨页面状态，并把三个职责页面接到同一组 FastAPI 数据。 */
+/** 应用根组件：保存查询与 Dashboard 两个页面的共享状态。 */
 function App() {
   const [activeSection, setActiveSection] = useState<AppSection>('query')
   const [theme, setTheme] = useState<ColorTheme>(getInitialTheme)
@@ -1536,15 +1170,8 @@ function App() {
   const [dashboardClarificationAnswer, setDashboardClarificationAnswer] = useState('')
   const [dashboardClarificationHistory, setDashboardClarificationHistory] =
     useState<ClarificationTurn[]>([])
-  const [knowledge, setKnowledge] = useState<KnowledgeStatus | null>(null)
-  const [catalog, setCatalog] = useState<CatalogResponse | null>(null)
   const [aiStatus, setAIStatus] = useState<AIStatus | null>(null)
-  const [semanticReview, setSemanticReview] = useState<SemanticReviewState | null>(null)
-  const [dataSources, setDataSources] = useState<DataSourcesResponse | null>(null)
-  const [switchingSource, setSwitchingSource] = useState<DataSourceId | null>(null)
   const [loading, setLoading] = useState(false)
-  const [syncJob, setSyncJob] = useState<KnowledgeSyncJob | null>(null)
-  const [reviewingId, setReviewingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   /** 外观状态：同步根节点、浏览器主题色并记住用户选择。 */
@@ -1562,24 +1189,13 @@ function App() {
     }
   }, [theme])
 
-  /** 初始化数据流：一次并行读取三个页面共用的知识、目录和 AI 状态。 */
+  /** 初始化数据流：读取 AI 状态和静态 Dashboard。 */
   useEffect(() => {
     let active = true
-    Promise.all([
-      getKnowledgeStatus(),
-      getCatalog(),
-      getAIStatus(),
-      getSemanticProposals(),
-      getDataSources(),
-      getDashboard(),
-    ])
-      .then(([nextKnowledge, nextCatalog, nextAI, nextSemantic, nextSources, nextDashboard]) => {
+    Promise.all([getAIStatus(), getDashboard()])
+      .then(([nextAI, nextDashboard]) => {
         if (!active) return
-        setKnowledge(nextKnowledge)
-        setCatalog(nextCatalog)
         setAIStatus(nextAI)
-        setSemanticReview(nextSemantic)
-        setDataSources(nextSources)
         setDashboard(nextDashboard)
       })
       .catch((loadError: unknown) => {
@@ -1652,7 +1268,6 @@ function App() {
         setResult(response.result)
         setAnswer(response.answer)
       }
-      setKnowledge(await getKnowledgeStatus())
     } catch {
       // 浏览器断网等无法到达后端的情况没有模型可用，仍只展示客户可理解的回答。
       setResult(null)
@@ -1675,7 +1290,7 @@ function App() {
   } = {}): Promise<void> {
     const cleanedQuestion = dashboardQuestion.trim()
     if (!cleanedQuestion) {
-      setDashboardNotice('请先输入希望 Dashboard 回答的问题。')
+      setDashboardNotice('请先输入希望数据看板回答的问题。')
       return
     }
     const { confirmedView, clarificationAnswer, startNew = false } = options
@@ -1684,7 +1299,7 @@ function App() {
       nextHistory = [
         ...nextHistory,
         {
-          question: dashboardClarification.clarification_question ?? '请补充 Dashboard 查询信息。',
+          question: dashboardClarification.clarification_question ?? '请补充数据看板查询信息。',
           answer: clarificationAnswer.trim(),
         },
       ]
@@ -1714,7 +1329,7 @@ function App() {
         setDashboardNotice(response.answer)
       }
     } catch {
-      setDashboardNotice('当前暂时无法生成 Dashboard，请确认查询服务可用后重试。')
+      setDashboardNotice('当前暂时无法生成数据看板，请确认查询服务可用后重试。')
     } finally {
       setDashboardLoading(false)
     }
@@ -1723,96 +1338,6 @@ function App() {
   function handleDashboardSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
     void executeDashboard({ startNew: true })
-  }
-
-  /** 同步状态机：扫描 SQLite 后刷新知识、目录与语义审核状态。 */
-  async function handleSync(): Promise<void> {
-    setError(null)
-    try {
-      let job = await syncKnowledge()
-      setSyncJob(job)
-      for (let attempt = 0; attempt < 800; attempt += 1) {
-        if (job.status === 'completed') break
-        if (job.status === 'failed') {
-          throw new Error(job.message ?? '同步失败，上一份有效画像仍在使用。')
-        }
-        await new Promise<void>((resolve) => {
-          window.setTimeout(resolve, 750)
-        })
-        job = await getKnowledgeSyncJob(job.job_id)
-        setSyncJob(job)
-      }
-      if (job.status !== 'completed') {
-        throw new Error('同步仍在后台运行，请稍后查看画像更新时间。')
-      }
-      const [nextStatus, nextCatalog, nextSemantic] = await Promise.all([
-        getKnowledgeStatus(), getCatalog(), getSemanticProposals(),
-      ])
-      setKnowledge(nextStatus)
-      setCatalog(nextCatalog)
-      setSemanticReview(nextSemantic)
-    } catch (syncError) {
-      setError(syncError instanceof Error ? syncError.message : '同步失败，请重试。')
-    } finally {
-      setSyncJob(null)
-    }
-  }
-
-  /** 数据源切换：后端预检成功后清空旧查询，并刷新所有来源相关页面状态。 */
-  async function handleSourceSwitch(sourceId: DataSourceId): Promise<void> {
-    setSwitchingSource(sourceId)
-    setError(null)
-    try {
-      const nextSources = await switchDataSource(sourceId)
-      const [nextStatus, nextCatalog, nextSemantic, nextDashboard] = await Promise.all([
-        getKnowledgeStatus(),
-        getCatalog(),
-        getSemanticProposals(),
-        getDashboard(),
-      ])
-      setDataSources(nextSources)
-      setKnowledge(nextStatus)
-      setCatalog(nextCatalog)
-      setSemanticReview(nextSemantic)
-      setDashboard(nextDashboard)
-      setResult(null)
-      setAnswer('')
-      setConfirmation(null)
-      setClarification(null)
-      setClarificationText('')
-      setClarificationHistory([])
-      setDashboardQuestion('')
-      setDashboardNotice(null)
-      setDashboardClarification(null)
-      setDashboardConfirmation(null)
-      setDashboardClarificationAnswer('')
-      setDashboardClarificationHistory([])
-    } catch (switchError) {
-      setError(switchError instanceof Error ? switchError.message : '数据源切换失败。')
-      setDataSources(await getDataSources().catch(() => dataSources))
-    } finally {
-      setSwitchingSource(null)
-    }
-  }
-
-  /** 审核状态机：批准或拒绝建议后刷新正式目录和健康状态。 */
-  async function handleSemanticReview(
-    proposalId: string,
-    decision: 'approve' | 'reject',
-  ): Promise<void> {
-    setReviewingId(proposalId)
-    setError(null)
-    try {
-      const nextSemantic = await reviewSemanticProposal(proposalId, decision)
-      const [nextStatus, nextCatalog] = await Promise.all([getKnowledgeStatus(), getCatalog()])
-      setSemanticReview(nextSemantic)
-      setKnowledge(nextStatus)
-      setCatalog(nextCatalog)
-    } catch (reviewError) {
-      setError(reviewError instanceof Error ? reviewError.message : '语义审核失败，请重试。')
-    } finally {
-      setReviewingId(null)
-    }
   }
 
   /** 导航状态：切换页面后在窄屏自动收起覆盖面板，桌面端保持用户选择。 */
@@ -1834,9 +1359,6 @@ function App() {
       <a className="skip-link" href="#main-content">跳到主要内容</a>
       <aside className="app-sidebar" aria-label="主导航">
         <div className="sidebar-brand">
-          <div className="brand-symbol" aria-hidden="true">
-            <Database size={25} />
-          </div>
           <span>Data Agent</span>
           <button
             className="collapse-button"
@@ -1867,14 +1389,14 @@ function App() {
         <div
           className="sidebar-foot"
           role="status"
-          aria-label={`${aiStatus?.configured ? 'AI 服务正常' : 'AI 服务未配置'}，模型 ${aiStatus?.model ?? 'deepseek-v4-flash'}，数据源 ${dataSources?.sources.find((source) => source.source_id === dataSources.active_source_id)?.dataset_label ?? '读取中'}`}
+          aria-label={`${aiStatus?.configured ? 'AI 服务正常' : 'AI 服务未配置'}，模型 ${aiStatus?.model ?? 'deepseek-v4-flash'}，SQLite 本地数据库`}
           title={aiStatus?.configured ? 'AI 服务正常' : 'AI 服务未配置'}
         >
           <span className={aiStatus?.configured ? 'service-dot is-online' : 'service-dot'} aria-hidden="true" />
           <span className="service-copy">
             <span className="service-model">{aiStatus?.model ?? 'deepseek-v4-flash'}</span>
             <span className="service-dataset">
-              {dataSources?.sources.find((source) => source.source_id === dataSources.active_source_id)?.dataset_label ?? '数据源读取中'}
+              SQLite 本地数据库
             </span>
           </span>
         </div>
@@ -1937,27 +1459,6 @@ function App() {
               onConfirm={(viewName) => void executeDashboard({
                 confirmedView: viewName,
               })}
-            />
-          )}
-          {activeSection === 'knowledge' && (
-            <KnowledgePage
-              status={knowledge}
-              catalog={catalog}
-              semanticReview={semanticReview}
-              syncJob={syncJob}
-              reviewingId={reviewingId}
-              onSync={handleSync}
-              onReview={handleSemanticReview}
-            />
-          )}
-          {activeSection === 'settings' && (
-            <SettingsPage
-              status={knowledge}
-              aiStatus={aiStatus}
-              semanticReview={semanticReview}
-              dataSources={dataSources}
-              switchingSource={switchingSource}
-              onSwitchSource={handleSourceSwitch}
             />
           )}
         </main>

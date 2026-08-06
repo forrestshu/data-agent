@@ -1,18 +1,14 @@
-"""FastAPI 接口层：向 React 提供查询、确认和知识同步边界。"""
+"""FastAPI 入口：提供 SQLite 查询、Dashboard 和结果导出。"""
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 import logging
-from logging.handlers import RotatingFileHandler
 from tempfile import SpooledTemporaryFile
-import threading
-import time
-from typing import Annotated, Any, AsyncIterator
+from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -20,62 +16,31 @@ from fastapi.staticfiles import StaticFiles
 from openpyxl import Workbook
 from pydantic import BaseModel, Field
 
-from .ai_agent import AIQueryAgent, AgentClarificationRequired
-from .catalog import load_catalog
-from .data_sources import (
-    DataSourceConfig,
-    DataSourceRegistry,
-    SQLITE_SOURCE_ID,
-)
-from .dashboard import build_initial_dashboard, build_query_dashboard
-from .dashboard_agent import (
-    DashboardAgent,
+from data_agent.query.agents.support import explain_failure as explain_query_failure
+from data_agent.query.agents.exact import AgentClarificationRequired
+from data_agent.knowledge.catalog import load_catalog
+from data_agent.database import Database
+from data_agent.query.dashboard_view import build_initial_dashboard
+from data_agent.query.agents.dashboard import (
     DashboardClarificationRequired,
     DashboardPlanningError,
+    DashboardUnsupportedQuery,
 )
-from .executor import ClarificationRequired, ReadOnlyQueryService
-from .knowledge_sync import KnowledgeReviewRequired, KnowledgeSyncService
-from .llm import DeepSeekClient, LLMClient, LLMUnavailable
-from .router import RouteConfirmationRequired
-from .semantic_review import SemanticReviewError, SemanticReviewService
-from .settings import CATALOG_PATH, FRONTEND_DIST_PATH, RUNTIME_ROOT
-from .sqlserver_knowledge_sync import SQLServerKnowledgeSyncService
+from data_agent.query.execution.executor import ReadOnlyQueryService
+from data_agent.query.execution.exports import QueryExportRegistry
+from data_agent.knowledge.profile import KnowledgeError, load_profile
+from data_agent.llm import DeepSeekClient, LLMClient, LLMUnavailable
+from data_agent.query.contracts import RouteConfirmationRequired
+from data_agent.query.workflow import QueryRuntime
+from data_agent.settings import DATABASE_PROFILE_PATH, FRONTEND_DIST_PATH
 
 
 logger = logging.getLogger(__name__)
-QUERY_ERROR_LOG_PATH = RUNTIME_ROOT / "query-errors.log"
-
-
-def _configure_query_error_log() -> None:
-    """把客户边界异常保存在本机运行目录，便于凭参考编号排查。"""
-
-    QUERY_ERROR_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    resolved = str(QUERY_ERROR_LOG_PATH.resolve())
-    if any(
-        isinstance(handler, RotatingFileHandler)
-        and getattr(handler, "baseFilename", None) == resolved
-        for handler in logger.handlers
-    ):
-        return
-    handler = RotatingFileHandler(
-        QUERY_ERROR_LOG_PATH,
-        maxBytes=2 * 1024 * 1024,
-        backupCount=2,
-        encoding="utf-8",
-    )
-    handler.setLevel(logging.ERROR)
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
-    )
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-
-
-_configure_query_error_log()
+logger.addHandler(logging.NullHandler())
 
 
 def _json_safe(value: Any) -> Any:
-    """把 SQL Server Decimal、日期等驱动类型转换成标准 JSON 值。"""
+    """把日期等数据库类型转换成标准 JSON 值。"""
 
     return jsonable_encoder(value)
 
@@ -113,95 +78,11 @@ class DashboardQueryRequest(BaseModel):
     )
 
 
-@dataclass(frozen=True)
-class QueryExportPlan:
-    """临时导出凭证：只保存已验证 SQL，不缓存完整业务数据，15 分钟后失效。"""
-
-    created_at: float
-    source_id: str
-    database_fingerprint: str
-    schema_fingerprint: str
-    sql: str
-    parameters: tuple[Any, ...]
-
-
-@dataclass
-class KnowledgeSyncJob:
-    """后台画像任务状态；旧画像在任务完成前继续服务查询。"""
-
-    job_id: str
-    source_id: str
-    source_kind: str
-    dataset_label: str
-    status: str
-    created_at: float
-    completed_views: int = 0
-    total_views: int = 0
-    current_view: str | None = None
-    finished_at: float | None = None
-    message: str | None = None
-
-    def public_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-class SyncRequest(BaseModel):
-    """接口模型：保留显式同步原因，便于后续接入审计日志。"""
-
-    reason: str = Field(default="manual", min_length=2, max_length=200)
-
-
-class SemanticReviewRequest(BaseModel):
-    """接口模型：人工明确批准或拒绝 AI 语义建议，并可留下审核说明。"""
-
-    decision: str = Field(pattern="^(approve|reject)$")
-    reviewer_note: str = Field(default="", max_length=500)
-
-
-class DataSourceSwitchRequest(BaseModel):
-    """切换契约：只接受后端预先登记的固定数据源 ID。"""
-
-    source_id: str = Field(pattern="^(sqlite_internal|sqlserver_company)$")
-
-
-def _knowledge_service(source: DataSourceConfig) -> Any:
-    if source.kind == "sqlite":
-        assert source.database_path is not None
-        return KnowledgeSyncService(
-            source.database_path,
-            catalog_path=CATALOG_PATH,
-            profile_path=source.profile_path,
-            report_path=source.report_path,
-        )
-    return SQLServerKnowledgeSyncService(source)
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """启动时确保活动数据源已连接并有独立机器画像。"""
-
-    source: DataSourceConfig = app.state.source_registry.active()
-    manager = app.state.knowledge_by_source[source.source_id]
-    if source.kind == "sqlserver":
-        # 首次启动或结构发生变化时完成限时完整画像；已有兼容画像可直接复用。
-        existing = manager.load_profile()
-        status = manager.status() if existing is not None else {"status": "update_required"}
-        if existing is None or status.get("status") == "update_required":
-            manager.sync()
-    profile = manager.ensure_current(auto_sync=True)
-    semantic: SemanticReviewService = app.state.semantic_by_source[source.source_id]
-    semantic.ensure_for_profile(profile)
-    yield
-
-
 def create_app(
     llm_client: LLMClient | None = None,
     use_environment_ai: bool = True,
-    require_ai: bool = True,
-    source_id: str | None = None,
-    persist_source: bool = True,
 ) -> FastAPI:
-    """应用工厂：客户模式强制 AI；测试或诊断可显式允许本地规则能力。"""
+    """应用工厂：所有自然语言查询都必须使用 AI 规划。"""
 
     configured_llm = llm_client
     if configured_llm is None and use_environment_ai:
@@ -209,135 +90,44 @@ def create_app(
     app = FastAPI(
         title="ERP Data Agent API",
         version="0.3.0",
-        description="DeepSeek 语义理解、自然语言回答与 SQLite/SQL Server 双数据源服务",
-        lifespan=lifespan,
+        description="DeepSeek 语义理解、自然语言回答与 SQLite 只读查询",
     )
-    app.state.source_registry = DataSourceRegistry(
-        active_source_id=source_id,
-        persist=persist_source,
-    )
-    app.state.knowledge_by_source = {
-        source.source_id: _knowledge_service(source)
-        for source in app.state.source_registry.sources.values()
-    }
+    app.state.database = Database.from_environment()
+    app.state.profile = load_profile(DATABASE_PROFILE_PATH)
     app.state.llm = configured_llm
-    app.state.require_ai = require_ai
-    app.state.semantic_by_source = {
-        source.source_id: SemanticReviewService(
-            configured_llm,
-            proposals_path=source.proposals_path,
-        )
-        for source in app.state.source_registry.sources.values()
-    }
-    app.state.query_exports: dict[str, QueryExportPlan] = {}
-    app.state.knowledge_sync_jobs: dict[str, KnowledgeSyncJob] = {}
-    app.state.knowledge_sync_jobs_lock = threading.RLock()
+    app.state.query_exports = QueryExportRegistry()
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
         allow_credentials=False,
-        allow_methods=["GET", "POST", "PUT"],
+        allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
     )
 
-    def active_context(request: Request) -> tuple[DataSourceConfig, Any, SemanticReviewService]:
-        """每次请求只读取一次活动源，确保并发切换时上下文不混用。"""
+    def active_context(request: Request) -> tuple[Database, dict[str, Any]]:
+        """返回唯一 SQLite 数据库和静态知识画像。"""
 
-        registry: DataSourceRegistry = request.app.state.source_registry
-        source = registry.active()
-        return (
-            source,
-            request.app.state.knowledge_by_source[source.source_id],
-            request.app.state.semantic_by_source[source.source_id],
-        )
-
-    def source_envelope(source: DataSourceConfig) -> dict[str, Any]:
-        return source.source_metadata()
-
-    def data_sources_payload(request: Request) -> dict[str, Any]:
-        registry: DataSourceRegistry = request.app.state.source_registry
-        sources = []
-        for public in registry.list_public():
-            manager = request.app.state.knowledge_by_source[public["source_id"]]
-            if public["source_id"] == registry.active_source_id:
-                status = manager.status()
-            elif public["source_kind"] == "sqlserver":
-                status = manager.status(check_remote=False)
-            else:
-                status = manager.status()
-            sources.append(
-                {
-                    **public,
-                    "status": status.get("status", "unknown"),
-                    "reason": status.get("reason"),
-                    "generated_at": status.get("generated_at"),
-                }
-            )
-        return {
-            "active_source_id": registry.active_source_id,
-            "sources": sources,
-        }
+        return request.app.state.database, request.app.state.profile
 
     @app.get("/api/health")
     def health(request: Request) -> dict[str, Any]:
-        """健康接口：同时返回服务状态和知识画像是否可查询。"""
+        """健康接口：确认 SQLite 文件和 AI 配置。"""
 
-        source, manager, _ = active_context(request)
+        source, _ = active_context(request)
         llm: LLMClient | None = request.app.state.llm
         return {
             "service": "ok",
-            "knowledge": {**manager.status(), **source_envelope(source)},
-            "data_source": source.public_dict(),
+            "database": {
+                "type": "sqlite",
+                "file": source.path.name,
+                "ready": source.path.exists(),
+            },
             "ai": {
                 "configured": llm is not None,
                 "provider": llm.provider if llm else None,
                 "model": llm.model if llm else None,
-                "required": request.app.state.require_ai,
+                "required": True,
             },
-        }
-
-    @app.get("/api/data-sources")
-    def data_sources(request: Request) -> dict[str, Any]:
-        """列出固定数据源及安全状态，不返回账号、密码或连接串。"""
-
-        return data_sources_payload(request)
-
-    @app.put("/api/data-sources/active")
-    def switch_data_source(
-        payload: DataSourceSwitchRequest,
-        request: Request,
-    ) -> dict[str, Any]:
-        """先验证目标连接与画像，成功后才原子切换并清理旧导出令牌。"""
-
-        registry: DataSourceRegistry = request.app.state.source_registry
-        target = registry.get(payload.source_id)
-        manager = request.app.state.knowledge_by_source[target.source_id]
-        semantic: SemanticReviewService = request.app.state.semantic_by_source[target.source_id]
-        try:
-            if target.kind == "sqlserver":
-                manager.prepare_for_activation()
-            else:
-                manager.ensure_current(auto_sync=True)
-            profile = manager.ensure_current(auto_sync=False)
-            semantic.ensure_for_profile(profile)
-        except Exception as error:
-            logger.warning(
-                "数据源切换预检失败 source_id=%s error_type=%s",
-                target.source_id,
-                type(error).__name__,
-            )
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code": "data_source_unavailable",
-                    "message": f"{target.dataset_label}暂时无法连接或知识尚未就绪，当前数据源没有改变。",
-                },
-            ) from error
-        registry.activate(target.source_id)
-        request.app.state.query_exports.clear()
-        return {
-            **data_sources_payload(request),
-            "knowledge": {**manager.status(), **source_envelope(target)},
         }
 
     @app.get("/api/ai/status")
@@ -349,33 +139,18 @@ def create_app(
             "configured": llm is not None,
             "provider": llm.provider if llm else None,
             "model": llm.model if llm else None,
-            "required": request.app.state.require_ai,
-            "role": "精确数据查询 Text-to-SQL、Dashboard 概况规划、澄清、证据回答和新结构语义建议",
-        }
-
-    @app.get("/api/examples")
-    def examples() -> dict[str, list[str]]:
-        """体验接口：给前端提供可直接点击的真实快照问题。"""
-
-        return {
-            "examples": [
-                "查询物料 110000012 的库存和库位",
-                "查询物料 6100001876 的最新采购价和平均价",
-                "查询项目 24M148-B 的项目客户、项目机型和项目状态",
-                "查询工单 000022 的报工数量和末道工序",
-            ]
+            "required": True,
+            "role": "精确数据查询 Text-to-SQL、Dashboard 概况规划、澄清和证据回答",
         }
 
     @app.get("/api/dashboard")
     def initial_dashboard(request: Request) -> dict[str, Any]:
         """初始 Dashboard：只使用当前知识画像，不擅自执行额外业务查询。"""
 
-        source, manager, _ = active_context(request)
-        profile = manager.ensure_current(auto_sync=True)
+        _, profile = active_context(request)
         dashboard = build_initial_dashboard(profile, load_catalog())
         return {
             **_json_safe(dashboard),
-            **source_envelope(source),
         }
 
     @app.post("/api/dashboard/query")
@@ -385,9 +160,7 @@ def create_app(
     ) -> JSONResponse:
         """Dashboard 查询链路：概况理解、只读验证和图表契约彼此独立于精确查询。"""
 
-        source, manager, _ = active_context(request)
-        agent: DashboardAgent | None = None
-
+        source, profile = active_context(request)
         def failure_response(
             error: Exception,
             category: str,
@@ -402,14 +175,18 @@ def create_app(
                 category,
                 type(error).__name__,
             )
-            if agent is None:
-                answer = "当前 Dashboard 没有成功生成，请稍后重试。"
-                generated_by_ai = False
-            else:
-                answer, generated_by_ai = agent.explain_failure(
-                    payload.question,
-                    category,
-                )
+            answer, generated_by_ai = explain_query_failure(
+                request.app.state.llm,
+                payload.question,
+                category,
+                {
+                    "ai_unavailable": "当前暂时无法理解 Dashboard 概况问题，请稍后重试。",
+                    "missing_information": "还缺少可用于概况判断的业务范围，请补充后再试。",
+                    "knowledge_unavailable": "本地知识画像不可用，当前暂时不能安全查询。",
+                    "unsupported_query": "当前数据范围暂时无法生成这个概况，可以换一种业务对象或指标描述。",
+                    "internal_error": "当前 Dashboard 没有成功生成，请稍后重试。",
+                },
+            )
             return JSONResponse(
                 {
                     "status": "query_failed",
@@ -417,31 +194,13 @@ def create_app(
                     "answer_generated_by_ai": generated_by_ai,
                     "reference_id": reference_id,
                     "retryable": retryable,
-                    **source_envelope(source),
                 }
             )
 
         try:
-            profile = manager.ensure_current(auto_sync=True)
-            catalog = load_catalog()
             llm: LLMClient | None = request.app.state.llm
-            if request.app.state.require_ai and llm is None:
-                raise LLMUnavailable(
-                    "DeepSeek 尚未配置，Dashboard 概况必须使用 AI 理解。"
-                )
-            service = ReadOnlyQueryService(
-                source,
-                catalog,
-                database_profile=profile,
-            )
-            agent = DashboardAgent(
-                catalog,
-                llm,
-                database_profile=profile,
-                allow_fallback=not request.app.state.require_ai,
-                source=source,
-            )
-            understanding = agent.understand(
+            runtime = QueryRuntime.prepare(source, profile, llm)
+            outcome = runtime.execute_dashboard(
                 payload.question,
                 confirmed_view=payload.confirmed_view,
                 clarification_answer=payload.clarification_answer,
@@ -451,45 +210,18 @@ def create_app(
                 ),
                 limit=payload.limit,
             )
-            for source_view in understanding.source_views:
-                manager.assert_view_ready(profile, source_view)
-            result = service.ask_generated_sql(
-                understanding.effective_question,
-                understanding.generated_sql,
-                understanding.sql_parameters,
-                route_decision=understanding.route,
-                limit=payload.limit,
-            )
-            result = agent.localize_result_columns(
-                understanding.effective_question,
-                result,
-            )
-            dashboard = build_query_dashboard(
-                understanding.effective_question,
-                result,
-                original_question=payload.question,
-                intent_summary=understanding.trace.intent_summary,
-                route_reason=understanding.trace.route_reason,
-                display_units=understanding.display_units,
-                dashboard_title=understanding.title,
-                dashboard_summary=understanding.summary,
-                visualization_hint=understanding.visualization,
-                preferred_dimensions=understanding.dimension_columns,
-                preferred_metrics=understanding.metric_columns,
-            )
             return JSONResponse(
                 {
                     "status": "completed",
-                    "dashboard": _json_safe(dashboard),
-                    "ai": asdict(understanding.trace),
+                    "dashboard": _json_safe(outcome.dashboard),
+                    "ai": asdict(outcome.understanding.trace),
                     "evidence": {
-                        "source_views": list(result.plan.source_views or (result.plan.view_name,)),
-                        "total_count": result.total_count,
-                        "displayed_count": len(result.rows),
-                        "has_more": result.has_more,
-                        "notices": list(result.notices),
+                        "source_views": list(outcome.result.plan.source_views or (outcome.result.plan.view_name,)),
+                        "total_count": outcome.result.total_count,
+                        "displayed_count": len(outcome.result.rows),
+                        "has_more": outcome.result.has_more,
+                        "notices": list(outcome.result.notices),
                     },
-                    **source_envelope(source),
                 }
             )
         except DashboardClarificationRequired as error:
@@ -499,15 +231,16 @@ def create_app(
                     "message": str(error),
                     "analysis": error.analysis.model_dump(),
                     "ai": {"provider": error.provider, "model": error.model},
-                    **source_envelope(source),
                 }
             )
         except LLMUnavailable as error:
             return failure_response(error, "ai_unavailable", retryable=True)
-        except KnowledgeReviewRequired as error:
-            return failure_response(error, "knowledge_updating", retryable=True)
-        except DashboardPlanningError as error:
+        except KnowledgeError as error:
+            return failure_response(error, "knowledge_unavailable", retryable=False)
+        except DashboardUnsupportedQuery as error:
             return failure_response(error, "unsupported_query", retryable=False)
+        except DashboardPlanningError as error:
+            return failure_response(error, "internal_error", retryable=True)
         except (KeyError, ValueError) as error:
             return failure_response(error, "unsupported_query", retryable=False)
         except Exception as error:
@@ -517,9 +250,7 @@ def create_app(
     def query_data(payload: QueryRequest, request: Request) -> JSONResponse:
         """查询接口：AI 基于知识生成 SQL，守卫只读执行，再由 AI 基于证据回答。"""
 
-        source, manager, _ = active_context(request)
-        agent: AIQueryAgent | None = None
-
+        source, profile = active_context(request)
         def failure_response(
             error: Exception,
             category: str,
@@ -534,14 +265,18 @@ def create_app(
                 category,
                 type(error).__name__,
             )
-            if agent is None:
-                answer = "当前查询没有成功完成，请稍后重试。"
-                generated_by_ai = False
-            else:
-                answer, generated_by_ai = agent.explain_failure(
-                    payload.question,
-                    category,
-                )
+            answer, generated_by_ai = explain_query_failure(
+                request.app.state.llm,
+                payload.question,
+                category,
+                {
+                    "ai_unavailable": "当前暂时无法完成问题理解，请稍后重试。",
+                    "missing_information": "还缺少必要的业务对象、指标或范围，请补充后再查询。",
+                    "knowledge_unavailable": "本地知识画像不可用，当前暂时不能安全查询。",
+                    "unsupported_query": "当前语义层中没有足够信息回答这个问题，可以换一种方式说明业务对象和指标。",
+                    "internal_error": "当前查询没有成功完成，请稍后重试。若持续出现，可将页面上的参考编号提供给管理员。",
+                },
+            )
             return JSONResponse(
                 {
                     "status": "query_failed",
@@ -549,31 +284,13 @@ def create_app(
                     "answer_generated_by_ai": generated_by_ai,
                     "reference_id": reference_id,
                     "retryable": retryable,
-                    **source_envelope(source),
                 }
             )
 
         try:
-            profile = manager.ensure_current(auto_sync=True)
-            catalog = load_catalog()
             llm: LLMClient | None = request.app.state.llm
-            if request.app.state.require_ai and llm is None:
-                raise LLMUnavailable(
-                    "DeepSeek 尚未配置，客户查询必须使用 AI 理解并生成回答。"
-                )
-            service = ReadOnlyQueryService(
-                source,
-                catalog,
-                database_profile=profile,
-            )
-            agent = AIQueryAgent(
-                catalog,
-                llm,
-                database_profile=profile,
-                allow_fallback=not request.app.state.require_ai,
-                source=source,
-            )
-            understanding = agent.understand(
+            runtime = QueryRuntime.prepare(source, profile, llm)
+            outcome = runtime.execute_exact(
                 payload.question,
                 confirmed_view=payload.confirmed_view,
                 clarification_answer=payload.clarification_answer,
@@ -583,75 +300,20 @@ def create_app(
                 ),
                 limit=payload.limit,
             )
-            if understanding.route.requires_confirmation:
-                raise RouteConfirmationRequired(understanding.route)
-            for source_view in understanding.source_views:
-                manager.assert_view_ready(profile, source_view)
-            if understanding.generated_sql is not None:
-                result = service.ask_generated_sql(
-                    understanding.effective_question,
-                    understanding.generated_sql,
-                    understanding.sql_parameters,
-                    route_decision=understanding.route,
-                    limit=payload.limit,
-                )
-            else:
-                # 无 AI 的测试/诊断模式保留原确定性查询器，生产模式始终走 Text-to-SQL。
-                result = service.ask(
-                    understanding.effective_question,
-                    limit=payload.limit,
-                    route_decision=understanding.route,
-                    value_hints=understanding.value_hints,
-                    operation=understanding.operation,
-                    metric_column=understanding.metric_column,
-                )
-            result = agent.localize_result_columns(
-                understanding.effective_question,
-                result,
-            )
-            # 回答层也必须看到完整澄清历史，否则 SQL 使用了用户阈值，文案却可能遗忘阈值。
-            answer, answer_generated_by_ai = agent.answer(
-                understanding.effective_question,
-                result,
-            )
-            result_payload = _json_safe(asdict(result))
+            result_payload = _json_safe(asdict(outcome.result))
             result_payload["download_id"] = None
-            if result.plan.base_sql:
-                # 每次成功查询都提供导出；令牌只保存来源绑定的安全计划。
-                now = time.monotonic()
-                export_store: dict[str, QueryExportPlan] = request.app.state.query_exports
-                expired = [
-                    key
-                    for key, item in export_store.items()
-                    if now - item.created_at > 900
-                ]
-                for key in expired:
-                    export_store.pop(key, None)
-                while len(export_store) >= 20:
-                    oldest = min(export_store, key=lambda key: export_store[key].created_at)
-                    export_store.pop(oldest, None)
-                download_id = uuid4().hex
-                export_store[download_id] = QueryExportPlan(
-                    created_at=now,
-                    source_id=source.source_id,
-                    database_fingerprint=str(
-                        profile.get("database", {}).get("content_fingerprint", "")
-                    ),
-                    schema_fingerprint=str(
-                        profile.get("database", {}).get("schema_fingerprint", "")
-                    ),
-                    sql=result.plan.base_sql,
-                    parameters=result.plan.parameters,
+            if outcome.result.plan.base_sql:
+                result_payload["download_id"] = request.app.state.query_exports.register(
+                    sql=outcome.result.plan.base_sql,
+                    parameters=outcome.result.plan.parameters,
                 )
-                result_payload["download_id"] = download_id
             return JSONResponse(
                 {
                     "status": "completed",
-                    "answer": answer,
-                    "answer_generated_by_ai": answer_generated_by_ai,
+                    "answer": outcome.answer,
+                    "answer_generated_by_ai": outcome.answer_generated_by_ai,
                     "result": result_payload,
-                    "ai": asdict(understanding.trace),
-                    **source_envelope(source),
+                    "ai": asdict(outcome.understanding.trace),
                 }
             )
         except AgentClarificationRequired as error:
@@ -661,7 +323,6 @@ def create_app(
                     "message": str(error),
                     "analysis": error.analysis.model_dump(),
                     "ai": {"provider": error.provider, "model": error.model},
-                    **source_envelope(source),
                 }
             )
         except LLMUnavailable as error:
@@ -672,13 +333,10 @@ def create_app(
                     "status": "confirmation_required",
                     "message": str(error),
                     "route": asdict(error.decision),
-                    **source_envelope(source),
                 }
             )
-        except ClarificationRequired as error:
-            return failure_response(error, "missing_information", retryable=False)
-        except KnowledgeReviewRequired as error:
-            return failure_response(error, "knowledge_updating", retryable=True)
+        except KnowledgeError as error:
+            return failure_response(error, "knowledge_unavailable", retryable=False)
         except (KeyError, ValueError) as error:
             return failure_response(error, "unsupported_query", retryable=False)
         except Exception as error:
@@ -689,27 +347,12 @@ def create_app(
     def download_query_export(download_id: str, request: Request) -> StreamingResponse:
         """下载接口：凭短期令牌重新执行安全 SQL，并流式生成完整 Excel 文件。"""
 
-        export_store: dict[str, QueryExportPlan] = request.app.state.query_exports
+        export_store: QueryExportRegistry = request.app.state.query_exports
         plan = export_store.get(download_id)
-        if plan is None or time.monotonic() - plan.created_at > 900:
-            export_store.pop(download_id, None)
+        if plan is None:
             raise HTTPException(status_code=404, detail="下载已失效，请重新查询。")
 
-        source, manager, _ = active_context(request)
-        if source.source_id != plan.source_id:
-            export_store.pop(download_id, None)
-            raise HTTPException(status_code=409, detail="数据源已切换，请重新查询后下载。")
-        profile = manager.ensure_current(auto_sync=True)
-        fingerprint = str(profile.get("database", {}).get("content_fingerprint", ""))
-        schema_fingerprint = str(
-            profile.get("database", {}).get("schema_fingerprint", "")
-        )
-        if source.kind == "sqlite" and fingerprint != plan.database_fingerprint:
-            export_store.pop(download_id, None)
-            raise HTTPException(status_code=409, detail="数据库已更新，请重新查询后下载。")
-        if schema_fingerprint != plan.schema_fingerprint:
-            export_store.pop(download_id, None)
-            raise HTTPException(status_code=409, detail="数据库结构已更新，请重新查询后下载。")
+        source, profile = active_context(request)
 
         service = ReadOnlyQueryService(
             source,
@@ -761,194 +404,6 @@ def create_app(
                 )
             },
         )
-
-    @app.get("/api/knowledge/status")
-    def knowledge_status(request: Request) -> dict[str, Any]:
-        """治理接口：返回数据库指纹、漂移摘要和待审核兼容性问题。"""
-
-        source, manager, _ = active_context(request)
-        return {**manager.status(), **source_envelope(source)}
-
-    def _run_knowledge_sync_job(
-        job: KnowledgeSyncJob,
-        source: DataSourceConfig,
-        manager: Any,
-        semantic: SemanticReviewService,
-    ) -> None:
-        """后台构建候选画像；manager.sync 只在完整成功后原子写入。"""
-
-        jobs_lock: threading.RLock = app.state.knowledge_sync_jobs_lock
-
-        def progress(completed: int, total: int, view: str, _: str) -> None:
-            with jobs_lock:
-                job.completed_views = completed
-                job.total_views = total
-                job.current_view = view
-
-        with jobs_lock:
-            job.status = "running"
-        try:
-            if source.kind == "sqlserver":
-                manager.sync(progress_callback=progress)
-            else:
-                manager.sync()
-            profile = manager.load_profile()
-            if profile is None:
-                raise KnowledgeReviewRequired("同步完成后未找到知识画像。")
-            semantic.ensure_for_profile(profile)
-            with jobs_lock:
-                job.status = "completed"
-                job.completed_views = int(
-                    profile.get("summary", {}).get("business_table_count") or 0
-                )
-                job.total_views = job.completed_views
-                job.current_view = None
-                job.finished_at = time.time()
-                job.message = "同步完成"
-        except Exception as error:
-            logger.warning(
-                "后台知识同步失败 source_id=%s error_type=%s",
-                source.source_id,
-                type(error).__name__,
-            )
-            with jobs_lock:
-                job.status = "failed"
-                job.current_view = None
-                job.finished_at = time.time()
-                job.message = "同步失败，上一份有效画像仍在使用。"
-
-    @app.post("/api/knowledge/sync")
-    def sync_knowledge(payload: SyncRequest, request: Request) -> dict[str, Any]:
-        """启动后台完整画像，不阻塞页面或覆盖当前有效画像。"""
-
-        source, manager, semantic = active_context(request)
-        jobs: dict[str, KnowledgeSyncJob] = request.app.state.knowledge_sync_jobs
-        jobs_lock: threading.RLock = request.app.state.knowledge_sync_jobs_lock
-        with jobs_lock:
-            for existing in jobs.values():
-                if (
-                    existing.source_id == source.source_id
-                    and existing.status in {"queued", "running"}
-                ):
-                    return {
-                        **existing.public_dict(),
-                        **source_envelope(source),
-                        "reason": payload.reason,
-                    }
-            profile = manager.load_profile() or {}
-            total_views = int(
-                profile.get("summary", {}).get("business_table_count") or 0
-            )
-            job = KnowledgeSyncJob(
-                job_id=uuid4().hex,
-                source_id=source.source_id,
-                source_kind=source.kind,
-                dataset_label=source.dataset_label,
-                status="queued",
-                created_at=time.time(),
-                total_views=total_views,
-            )
-            jobs[job.job_id] = job
-            finished_jobs = sorted(
-                (
-                    candidate
-                    for candidate in jobs.values()
-                    if candidate.status in {"completed", "failed"}
-                ),
-                key=lambda candidate: candidate.finished_at or candidate.created_at,
-                reverse=True,
-            )
-            for stale in finished_jobs[20:]:
-                jobs.pop(stale.job_id, None)
-        threading.Thread(
-            target=_run_knowledge_sync_job,
-            args=(job, source, manager, semantic),
-            name=f"knowledge-sync-{source.source_id}",
-            daemon=True,
-        ).start()
-        return {
-            **job.public_dict(),
-            **source_envelope(source),
-            "reason": payload.reason,
-        }
-
-    @app.get("/api/knowledge/sync/{job_id}")
-    def knowledge_sync_job(job_id: str, request: Request) -> dict[str, Any]:
-        """读取后台同步进度；任务结果不包含数据库凭据或业务数据。"""
-
-        jobs: dict[str, KnowledgeSyncJob] = request.app.state.knowledge_sync_jobs
-        jobs_lock: threading.RLock = request.app.state.knowledge_sync_jobs_lock
-        with jobs_lock:
-            job = jobs.get(job_id)
-            if job is None:
-                raise HTTPException(status_code=404, detail="同步任务不存在或已过期。")
-            return job.public_dict()
-
-    @app.get("/api/knowledge/semantic-proposals")
-    def semantic_proposals(request: Request) -> dict[str, Any]:
-        """语义治理接口：返回 AI 对新增表/字段的建议及人工审核状态。"""
-
-        source, manager, semantic = active_context(request)
-        profile = manager.ensure_current(auto_sync=True)
-        return {
-            **semantic.ensure_for_profile(profile),
-            **source_envelope(source),
-        }
-
-    @app.post("/api/knowledge/semantic-proposals/{proposal_id}/review")
-    def review_semantic_proposal(
-        proposal_id: str,
-        payload: SemanticReviewRequest,
-        request: Request,
-    ) -> dict[str, Any]:
-        """语义治理接口：只有这个显式人工动作能把 AI 建议写入查询知识。"""
-
-        source, manager, semantic = active_context(request)
-        profile = manager.ensure_current(auto_sync=False)
-        try:
-            reviewed = semantic.review(
-                proposal_id,
-                decision=payload.decision,
-                reviewer_note=payload.reviewer_note,
-                profile=profile,
-            )
-            if payload.decision == "approve":
-                manager.sync()
-            return {**reviewed, **source_envelope(source)}
-        except SemanticReviewError as error:
-            raise HTTPException(
-                status_code=422,
-                detail={"code": "semantic_review_error", "message": str(error)},
-            ) from error
-
-    @app.get("/api/knowledge/catalog")
-    def knowledge_catalog(
-        request: Request,
-        include_columns: Annotated[bool, Query()] = False,
-    ) -> dict[str, Any]:
-        """治理接口：展示人工业务知识；按需附带机器字段画像，避免首页负载过大。"""
-
-        source, manager, _ = active_context(request)
-        profile = manager.ensure_current(auto_sync=True)
-        catalog = load_catalog()
-        tables = profile.get("tables", [])
-        if not include_columns:
-            tables = [
-                {key: value for key, value in table.items() if key != "columns"}
-                for table in tables
-            ]
-        return {
-            "catalog_version": catalog.version,
-            "views": [asdict(view) for view in catalog.views],
-            "relationships": [asdict(item) for item in catalog.relationships],
-            "join_policies": list(catalog.join_policies),
-            "semantic_equivalences": list(catalog.semantic_equivalences),
-            "semantic_conflicts": list(catalog.semantic_conflicts),
-            "semantic_source": catalog.semantic_source,
-            "tables": tables,
-            "generated_limitations": profile.get("generated_limitations", []),
-            **source_envelope(source),
-        }
 
     if FRONTEND_DIST_PATH.exists():
         # 生产构建存在时由 FastAPI 同源托管；开发阶段仍使用 Vite HMR。

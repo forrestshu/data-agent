@@ -5,14 +5,12 @@ __pycache__/
 .env
 .env.*
 !.env.example
-.data-agent/
-
 # Browser and test artifacts
 .playwright-cli/
 .playwright-mcp/
 
-# Local data snapshots and SQLite runtime sidecars
-data/sqlite/*.sqlite
+# SQLite runtime sidecars
+backend/*.sqlite
 *.sqlite-shm
 *.sqlite-wal
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from io import BytesIO
 from decimal import Decimal
-import time
 import unittest
 from typing import Any
 
@@ -12,17 +11,12 @@ from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 
 from data_agent.api import _json_safe, create_app
-from data_agent.data_sources import SQLITE_SOURCE_ID
 
 
 def create_test_app(**kwargs: Any):
-    """API 测试固定使用 SQLite，避免依赖内网 SQL Server。"""
+    """API 测试使用唯一的 SQLite 数据库。"""
 
-    return create_app(
-        source_id=SQLITE_SOURCE_ID,
-        persist_source=False,
-        **kwargs,
-    )
+    return create_app(**kwargs)
 
 
 class FakeLLMClient:
@@ -119,6 +113,64 @@ class TechnicalFailureAnswerLLMClient(BrokenIntentLLMClient):
         """返回应被后端安全过滤的技术化回答。"""
 
         return "DeepSeek JSON 接口契约校验失败，请检查 API。"
+
+
+class DashboardGuardRepairLLMClient:
+    """前两次重复输出非法 Company 字段，第三次按守卫反馈生成可执行 SQL。"""
+
+    provider = "deepseek"
+    model = "deepseek-v4-flash"
+
+    def __init__(self) -> None:
+        self.planning_calls = 0
+
+    def complete_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int = 1200,
+    ) -> dict[str, Any]:
+        if "尚未登记语义的英文列名" in system_prompt:
+            return {"column_labels": {"OrderCount": "销售订单数"}}
+        self.planning_calls += 1
+        if self.planning_calls <= 2:
+            return {
+                "status": "ready",
+                "confidence": 0.95,
+                "title": "销售订单总数",
+                "summary": "按销售订单号去重统计订单数量。",
+                "route_reason": "销售订单视图包含销售订单号",
+                "source_views": ["AiQuerySoOverViewV"],
+                "sql": (
+                    "SELECT Company, COUNT(DISTINCT OrderNum) AS OrderCount "
+                    "FROM AiQuerySoOverViewV GROUP BY Company"
+                ),
+                "parameters": [],
+                "visualization": "metric",
+                "dimension_columns": [],
+                "metric_columns": ["OrderCount"],
+            }
+        return {
+            "status": "ready",
+            "confidence": 0.95,
+            "title": "销售订单总数",
+            "summary": "按销售订单号去重统计订单数量。",
+            "route_reason": "销售订单视图包含销售订单号",
+            "source_views": ["AiQuerySoOverViewV"],
+            "sql": "SELECT COUNT(DISTINCT OrderNum) AS OrderCount FROM AiQuerySoOverViewV",
+            "parameters": [],
+            "visualization": "metric",
+            "dimension_columns": [],
+            "metric_columns": ["OrderCount"],
+        }
+
+    def complete_text(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int = 1200,
+    ) -> str:
+        return ""
 
 
 class RepeatedClarificationLLMClient:
@@ -222,7 +274,7 @@ class ApiTests(unittest.TestCase):
         """测试生命周期：启动 FastAPI 并执行其知识画像预检。"""
 
         cls.client_context = TestClient(
-            create_test_app(use_environment_ai=False, require_ai=False)
+            create_test_app(use_environment_ai=False)
         )
         cls.client = cls.client_context.__enter__()
 
@@ -232,15 +284,16 @@ class ApiTests(unittest.TestCase):
 
         cls.client_context.__exit__(None, None, None)
 
-    def test_health_reports_ready_knowledge(self) -> None:
-        """健康接口必须同时证明 API 存活且当前知识画像可用。"""
+    def test_health_reports_ready_database(self) -> None:
+        """健康接口必须同时证明 API 和 SQLite 数据库可用。"""
 
         response = self.client.get("/api/health")
         self.assertEqual(200, response.status_code)
         self.assertEqual("ok", response.json()["service"])
-        self.assertEqual("ready", response.json()["knowledge"]["status"])
+        self.assertTrue(response.json()["database"]["ready"])
+        self.assertEqual("data_agent_2026_07_15.sqlite", response.json()["database"]["file"])
 
-    def test_sqlserver_decimal_values_are_json_serializable(self) -> None:
+    def test_decimal_values_are_json_serializable(self) -> None:
         encoded = _json_safe(
             {
                 "amount": Decimal("1234.56"),
@@ -253,10 +306,22 @@ class ApiTests(unittest.TestCase):
     def test_query_returns_route_plan_and_rows(self) -> None:
         """标准问题必须返回完整的路由证据、参数化计划与真实数据行。"""
 
-        response = self.client.post(
-            "/api/query",
-            json={"question": "查询物料 110000012 的库存和库位", "limit": 20},
+        fake = FakeLLMClient(
+            {
+                "status": "ready",
+                "confidence": 0.95,
+                "intent_summary": "物料库存和库位",
+                "route_reason": "库存视图包含物料、库位和现有量",
+                "sql": "SELECT PartNum, BinNum, BinName, Qty FROM AiQueryPartOnHandV WHERE PartNum = ?",
+                "parameters": ["110000012"],
+            },
+            answer="物料 **110000012** 的库存与库位见查询结果。",
         )
+        with TestClient(create_test_app(llm_client=fake)) as client:
+            response = client.post(
+                "/api/query",
+                json={"question": "查询物料 110000012 的库存和库位", "limit": 20},
+            )
         self.assertEqual(200, response.status_code)
         payload = response.json()
         self.assertEqual("completed", payload["status"])
@@ -279,16 +344,28 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(any(widget["kind"] == "bar" for widget in payload["widgets"]))
 
     def test_fuzzy_query_requires_then_accepts_confirmation(self) -> None:
-        """口语问题未确认时不查库，带回候选视图后才返回结果。"""
+        """模型置信度较低时不查库，用户确认后才返回结果。"""
 
         question = "帮我看看物料 110000012 仓里还剩多少"
-        pending = self.client.post("/api/query", json={"question": question})
-        self.assertEqual("confirmation_required", pending.json()["status"])
-        view_name = pending.json()["route"]["view_name"]
-        confirmed = self.client.post(
-            "/api/query",
-            json={"question": question, "confirmed_view": view_name},
+        fake = FakeLLMClient(
+            {
+                "status": "ready",
+                "confidence": 0.5,
+                "intent_summary": "物料库存数量",
+                "route_reason": "口语表达可能指现有库存",
+                "sql": "SELECT PartNum, Qty FROM AiQueryPartOnHandV WHERE PartNum = ?",
+                "parameters": ["110000012"],
+            },
+            answer="物料 **110000012** 的库存数量见查询结果。",
         )
+        with TestClient(create_test_app(llm_client=fake)) as client:
+            pending = client.post("/api/query", json={"question": question})
+            self.assertEqual("confirmation_required", pending.json()["status"])
+            view_name = pending.json()["route"]["view_name"]
+            confirmed = client.post(
+                "/api/query",
+                json={"question": question, "confirmed_view": view_name},
+            )
         self.assertEqual("completed", confirmed.json()["status"])
 
     def test_dashboard_query_uses_separate_overview_chain(self) -> None:
@@ -330,39 +407,42 @@ class ApiTests(unittest.TestCase):
         self.assertEqual("件", payload["dashboard"]["widgets"][0]["unit"])
         self.assertNotIn("result", payload)
 
-    def test_catalog_exposes_curated_views_without_full_columns_by_default(self) -> None:
-        """目录接口默认返回轻量行数画像，并保留 16 个已审核视图。"""
+    def test_dashboard_broad_order_count_requests_business_type(self) -> None:
+        """“订单”同时可能指销售或采购时必须追问，不能误报数据库不支持。"""
 
-        response = self.client.get("/api/knowledge/catalog")
-        self.assertEqual(200, response.status_code)
+        fake = FakeLLMClient({"status": "unsupported"})
+        with TestClient(create_test_app(llm_client=fake)) as client:
+            response = client.post(
+                "/api/dashboard/query",
+                json={"question": "一共有多少订单"},
+            )
+
         payload = response.json()
-        self.assertEqual(16, len(payload["views"]))
-        self.assertEqual(16, len(payload["tables"]))
-        self.assertEqual(12, len(payload["relationships"]))
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("clarification_required", payload["status"])
+        self.assertEqual("choice", payload["analysis"]["clarification_kind"])
         self.assertEqual(
-            "docs/16张视图说明与字段关联分析.md",
-            payload["semantic_source"]["document"],
+            ["销售订单", "采购订单"],
+            payload["analysis"]["clarification_options"],
         )
-        self.assertTrue(payload["views"][0]["column_semantics"])
-        self.assertNotIn("columns", payload["tables"][0])
 
-    def test_knowledge_sync_runs_as_background_job(self) -> None:
-        started = self.client.post(
-            "/api/knowledge/sync",
-            json={"reason": "api-test"},
-        )
-        self.assertEqual(200, started.status_code)
-        job = started.json()
-        self.assertIn(job["status"], {"queued", "running", "completed"})
-        for _ in range(100):
-            if job["status"] in {"completed", "failed"}:
-                break
-            time.sleep(0.01)
-            response = self.client.get(f"/api/knowledge/sync/{job['job_id']}")
-            self.assertEqual(200, response.status_code)
-            job = response.json()
-        self.assertEqual("completed", job["status"])
+    def test_dashboard_retries_guard_rejected_sql_until_queryable(self) -> None:
+        """明确口径可查时，模型重复误用 Company 也应继续安全修复并展示结果。"""
 
+        fake = DashboardGuardRepairLLMClient()
+        with TestClient(create_test_app(llm_client=fake)) as client:
+            response = client.post(
+                "/api/dashboard/query",
+                json={"question": "销售订单一共有多少"},
+            )
+
+        payload = response.json()
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("completed", payload["status"])
+        self.assertEqual(3, fake.planning_calls)
+        self.assertEqual("销售订单总数", payload["dashboard"]["title"])
+        self.assertEqual("AiQuerySoOverViewV", payload["evidence"]["source_views"][0])
+        self.assertGreater(payload["dashboard"]["widgets"][0]["value"], 0)
 
 class AIApiTests(unittest.TestCase):
     """AI 接口验收：覆盖智能路由、自然语言回答与前端追问契约。"""
@@ -447,8 +527,6 @@ class AIApiTests(unittest.TestCase):
                 ],
                 "requested_fields": [],
                 "missing_information": ["需要查询的业务指标"],
-                "operation": None,
-                "metric_column": None,
             }
         )
         with TestClient(create_test_app(llm_client=fake)) as client:
@@ -623,7 +701,7 @@ class AIApiTests(unittest.TestCase):
                 "assumptions": [],
                 "display_units": {"Qty合计": "件"},
             },
-            answer="当前快照中，所有物料的库存数量合计为 3728843.4834。",
+            answer="当前快照中，所有物料的库存数量合计为 3728843.1254。",
         )
         with TestClient(create_test_app(llm_client=fake)) as client:
             response = client.post(
@@ -632,10 +710,9 @@ class AIApiTests(unittest.TestCase):
             )
             payload = response.json()
             self.assertEqual("completed", payload["status"])
-            self.assertEqual("text_to_sql", payload["result"]["plan"]["operation"])
             self.assertEqual(["AiQueryPartOnHandV"], payload["result"]["plan"]["source_views"])
             self.assertAlmostEqual(
-                3728843.4834,
+                3728843.1254,
                 payload["result"]["rows"][0]["Qty合计"],
             )
             self.assertFalse(payload["result"]["has_more"])
@@ -669,9 +746,8 @@ class AIApiTests(unittest.TestCase):
                 "parameters": [],
                 "assumptions": [],
                 "display_units": {"TotalQty": "件"},
-                "limit_is_user_requested": False,
             },
-            answer="库存量低于 **25** 的物料共有 **8712** 个。",
+            answer="库存量低于 **25** 的物料共有 **8714** 个。",
         )
         with TestClient(create_test_app(llm_client=fake)) as client:
             response = client.post(
@@ -680,7 +756,7 @@ class AIApiTests(unittest.TestCase):
             )
             payload = response.json()
             self.assertEqual("completed", payload["status"])
-            self.assertEqual(8712, payload["result"]["total_count"])
+            self.assertEqual(8714, payload["result"]["total_count"])
             self.assertEqual(500, len(payload["result"]["rows"]))
             self.assertTrue(payload["result"]["has_more"])
             self.assertNotIn("dashboard", payload)
@@ -692,7 +768,7 @@ class AIApiTests(unittest.TestCase):
             self.assertIn("spreadsheetml", download.headers["content-type"])
             workbook = load_workbook(BytesIO(download.content), read_only=True)
             worksheet = workbook["查询结果"]
-            self.assertEqual(8713, sum(1 for _ in worksheet.iter_rows()))
+            self.assertEqual(8715, sum(1 for _ in worksheet.iter_rows()))
             workbook.close()
 
     def test_ai_rewrites_answer_that_conflicts_with_nonempty_evidence(self) -> None:
@@ -761,7 +837,7 @@ class AIApiTests(unittest.TestCase):
         """客户模式缺少模型时返回自然语言状态，技术原因只留在后端日志。"""
 
         with TestClient(
-            create_test_app(use_environment_ai=False, require_ai=True)
+            create_test_app(use_environment_ai=False)
         ) as client:
             response = client.post(
                 "/api/query",

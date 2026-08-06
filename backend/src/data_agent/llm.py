@@ -1,4 +1,4 @@
-"""大模型网关层：以 OpenAI 兼容协议调用 DeepSeek，但不参与数据库写入。"""
+"""大模型 Adapter：以 OpenAI 兼容协议调用 DeepSeek。"""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ class DeepSeekConfig:
 
     @classmethod
     def from_environment(cls) -> "DeepSeekConfig | None":
-        """配置入口：没有 Key 时返回 None，让系统保留确定性规则降级能力。"""
+        """配置入口：没有 Key 时返回 None，查询运行时会明确拒绝自然语言查询。"""
 
         api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
         if not api_key:

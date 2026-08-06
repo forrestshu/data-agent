@@ -1,12 +1,11 @@
 [project]
 name = "erp-data-agent"
 version = "0.1.0"
-description = "ERP 自然语言查询与 SQLite/SQL Server 双数据源只读代理"
+description = "ERP 自然语言查询与 SQLite 只读代理"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.139.2",
     "httpx>=0.28.1",
-    "mssql-python>=1.11.0",
     "openpyxl>=3.1.5",
     "python-dotenv>=1.2.2",
     "sqlglot>=30.12.0",
@@ -14,8 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-data-agent = "data_agent.cli:main"
-data-agent-api = "data_agent.server:main"
+data-agent = "data_agent.server:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -23,8 +21,3 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/data_agent"]
-
-[dependency-groups]
-dev = [
-    "httpx>=0.28.1",
-]
