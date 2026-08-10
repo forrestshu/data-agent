@@ -475,6 +475,10 @@
 }
 
 .dashboard-page {
+  --composer-expand-duration: 400ms;
+  --composer-collapse-duration: 320ms;
+  --composer-enter-easing: cubic-bezier(0.22, 1, 0.36, 1);
+  --composer-exit-easing: cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   width: min(1000px, 100%);
   height: auto;
@@ -495,28 +499,86 @@
   min-width: min(420px, 100%);
   max-width: 100%;
   transition:
-    flex-basis 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    opacity 180ms ease;
+    flex-basis var(--composer-expand-duration) var(--composer-enter-easing),
+    transform var(--composer-expand-duration) var(--composer-enter-easing),
+    opacity 200ms ease-out,
+    padding-bottom var(--composer-expand-duration) var(--composer-enter-easing);
+}
+
+.dashboard-composer .input-heading {
+  max-height: 34px;
+  overflow: hidden;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    max-height 220ms ease-out,
+    margin-bottom 220ms ease-out,
+    opacity 180ms ease-out,
+    transform 220ms var(--composer-enter-easing);
 }
 
 .dashboard-composer .composer-box,
 .dashboard-composer .composer-box textarea {
+  height: 104px;
   min-height: 104px;
+}
+
+.dashboard-composer .composer-box {
+  transition:
+    height var(--composer-expand-duration) var(--composer-enter-easing),
+    min-height var(--composer-expand-duration) var(--composer-enter-easing),
+    border-radius var(--composer-expand-duration) var(--composer-enter-easing),
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.dashboard-composer .composer-box textarea {
+  transition:
+    height var(--composer-expand-duration) var(--composer-enter-easing),
+    min-height var(--composer-expand-duration) var(--composer-enter-easing),
+    padding var(--composer-expand-duration) var(--composer-enter-easing),
+    line-height var(--composer-expand-duration) var(--composer-enter-easing);
+}
+
+.dashboard-composer .primary-action {
+  transition:
+    right var(--composer-expand-duration) var(--composer-enter-easing),
+    bottom var(--composer-expand-duration) var(--composer-enter-easing),
+    width var(--composer-expand-duration) var(--composer-enter-easing),
+    height var(--composer-expand-duration) var(--composer-enter-easing),
+    color 160ms ease,
+    background-color 160ms ease,
+    opacity 160ms ease;
 }
 
 .dashboard-page.is-composer-compact .dashboard-composer {
   flex-basis: 420px;
+  animation: dashboard-composer-collapse var(--composer-collapse-duration) var(--composer-exit-easing) both;
+  transition-duration:
+    var(--composer-collapse-duration),
+    var(--composer-collapse-duration),
+    160ms,
+    var(--composer-collapse-duration);
 }
 
 .dashboard-page.is-composer-compact .dashboard-composer .input-heading {
-  display: none;
+  min-height: 0;
+  max-height: 0;
+  margin-bottom: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-6px);
 }
 
 .dashboard-page.is-composer-compact .dashboard-composer .composer-box,
 .dashboard-page.is-composer-compact .dashboard-composer .composer-box textarea {
   min-height: 52px;
   height: 52px;
+  transition-duration:
+    var(--composer-collapse-duration),
+    var(--composer-collapse-duration),
+    var(--composer-collapse-duration),
+    var(--composer-collapse-duration);
 }
 
 .dashboard-page.is-composer-compact .dashboard-composer .composer-box {
@@ -536,6 +598,14 @@
   bottom: 6px;
   width: 40px;
   height: 40px;
+  transition-duration:
+    var(--composer-collapse-duration),
+    var(--composer-collapse-duration),
+    var(--composer-collapse-duration),
+    var(--composer-collapse-duration),
+    160ms,
+    160ms,
+    160ms;
 }
 
 .dashboard-page.has-query-dashboard.is-composer-expanded .dashboard-composer {
@@ -545,7 +615,7 @@
   flex: 1 0 100%;
   width: 100%;
   padding-bottom: 8px;
-  animation: dashboard-composer-expand 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: dashboard-composer-expand var(--composer-expand-duration) var(--composer-enter-easing) both;
 }
 
 .dashboard-page.has-query-dashboard.is-composer-expanded .dashboard-heading-with-composer,
@@ -557,6 +627,80 @@
   order: -1;
   flex: 1 0 100%;
   width: 100%;
+}
+
+/*
+ * 桌面查询态使用稳定定位层：收缩时标题与输入框保持同一视觉行；
+ * 展开时由容器连续增加预留空间，带动标题和图表平滑下移，避免 Flex 换行瞬移。
+ */
+@media (min-width: 981px) {
+  .dashboard-page.has-query-dashboard .dashboard-heading-with-composer {
+    position: relative;
+    display: block;
+    min-height: 86px;
+    padding-top: 26px;
+    transition:
+      min-height var(--composer-expand-duration) var(--composer-enter-easing),
+      padding-top var(--composer-expand-duration) var(--composer-enter-easing),
+      margin-bottom var(--composer-expand-duration) var(--composer-enter-easing);
+  }
+
+  .dashboard-page.has-query-dashboard .dashboard-heading-with-composer > h2 {
+    width: calc(100% - 448px);
+  }
+
+  .dashboard-page.has-query-dashboard .dashboard-heading-with-composer > .dashboard-composer {
+    position: absolute;
+    top: 17px;
+    right: 0;
+    width: 420px;
+    min-width: 0;
+    max-width: 100%;
+    padding-bottom: 0;
+    transition:
+      top var(--composer-expand-duration) var(--composer-enter-easing),
+      width var(--composer-expand-duration) var(--composer-enter-easing),
+      transform var(--composer-expand-duration) var(--composer-enter-easing),
+      opacity 200ms ease-out,
+      padding-bottom var(--composer-expand-duration) var(--composer-enter-easing);
+  }
+
+  .dashboard-page.has-query-dashboard.is-composer-expanded .dashboard-heading-with-composer {
+    min-height: 218px;
+    padding-top: 184px;
+  }
+
+  .dashboard-page.has-query-dashboard.is-composer-expanded .dashboard-heading-with-composer > .dashboard-composer {
+    top: 0;
+    width: 100%;
+    padding-bottom: 8px;
+  }
+
+  .dashboard-page.has-query-dashboard.is-composer-compact .dashboard-heading-with-composer {
+    transition-duration:
+      var(--composer-collapse-duration),
+      var(--composer-collapse-duration),
+      var(--composer-collapse-duration);
+    transition-timing-function:
+      var(--composer-exit-easing),
+      var(--composer-exit-easing),
+      var(--composer-exit-easing);
+  }
+
+  .dashboard-page.has-query-dashboard.is-composer-compact .dashboard-heading-with-composer > .dashboard-composer {
+    transition-duration:
+      var(--composer-collapse-duration),
+      var(--composer-collapse-duration),
+      var(--composer-collapse-duration),
+      160ms,
+      var(--composer-collapse-duration);
+    transition-timing-function:
+      var(--composer-exit-easing),
+      var(--composer-exit-easing),
+      var(--composer-exit-easing),
+      ease-out,
+      var(--composer-exit-easing);
+  }
 }
 
 .dashboard-notice {
@@ -745,6 +889,10 @@
   justify-content: space-between;
   gap: 28px;
   margin-bottom: 16px;
+  transition:
+    gap var(--composer-expand-duration) var(--composer-enter-easing),
+    min-height var(--composer-expand-duration) var(--composer-enter-easing),
+    margin-bottom var(--composer-expand-duration) var(--composer-enter-easing);
 }
 
 .dashboard-page.is-composer-compact .dashboard-heading {
@@ -1341,8 +1489,19 @@
 
 @keyframes dashboard-composer-expand {
   from {
-    opacity: 0.86;
-    transform: translateY(-8px) scale(0.985);
+    opacity: 0.88;
+    transform: translateY(-6px) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dashboard-composer-collapse {
+  from {
+    opacity: 0.9;
+    transform: translateY(4px) scale(1.006);
   }
   to {
     opacity: 1;
@@ -1989,6 +2148,7 @@ td.numeric {
 
   .dashboard-composer .composer-box,
   .dashboard-composer .composer-box textarea {
+    height: 132px;
     min-height: 132px;
   }
 

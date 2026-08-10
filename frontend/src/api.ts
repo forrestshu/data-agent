@@ -46,7 +46,7 @@ export async function askQuestion(
   return readJson<QueryResponse>(response)
 }
 
-/** Dashboard 概况接口：独立于精确数据查询，允许模型推断排序、分布和趋势口径。 */
+/** Dashboard 概况接口：独立于数据查询，允许模型推断排序、分布和趋势口径。 */
 export async function askDashboardQuestion(
   question: string,
   limit: number,

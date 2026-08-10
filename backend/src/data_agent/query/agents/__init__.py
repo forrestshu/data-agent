@@ -1,1 +1,1 @@
-"""精确查询与 Dashboard 规划 Agent。"""
+"""数据查询与 Dashboard 规划 Agent。"""

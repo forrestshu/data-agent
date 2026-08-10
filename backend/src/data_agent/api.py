@@ -17,7 +17,7 @@ from openpyxl import Workbook
 from pydantic import BaseModel, Field
 
 from data_agent.query.agents.support import explain_failure as explain_query_failure
-from data_agent.query.agents.exact import AgentClarificationRequired
+from data_agent.query.agents.data_query import AgentClarificationRequired
 from data_agent.knowledge.catalog import load_catalog
 from data_agent.database import Database
 from data_agent.query.dashboard_view import build_initial_dashboard
@@ -140,7 +140,7 @@ def create_app(
             "provider": llm.provider if llm else None,
             "model": llm.model if llm else None,
             "required": True,
-            "role": "精确数据查询 Text-to-SQL、Dashboard 概况规划、澄清和证据回答",
+            "role": "数据查询 Text-to-SQL、Dashboard 概况规划、澄清和证据回答",
         }
 
     @app.get("/api/dashboard")
@@ -158,7 +158,7 @@ def create_app(
         payload: DashboardQueryRequest,
         request: Request,
     ) -> JSONResponse:
-        """Dashboard 查询链路：概况理解、只读验证和图表契约彼此独立于精确查询。"""
+        """Dashboard 查询链路：概况理解、只读验证和图表契约彼此独立于数据查询。"""
 
         source, profile = active_context(request)
         def failure_response(
@@ -290,7 +290,7 @@ def create_app(
         try:
             llm: LLMClient | None = request.app.state.llm
             runtime = QueryRuntime.prepare(source, profile, llm)
-            outcome = runtime.execute_exact(
+            outcome = runtime.execute_query(
                 payload.question,
                 confirmed_view=payload.confirmed_view,
                 clarification_answer=payload.clarification_answer,

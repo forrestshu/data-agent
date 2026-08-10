@@ -131,11 +131,6 @@ def build_initial_dashboard(
     ]
 
     generated_at = str(profile.get("generated_at") or "")
-    snapshot = str(
-        profile.get("database", {}).get("file_name")
-        or profile.get("database", {}).get("database_name")
-        or "当前数据源"
-    )
     return {
         "mode": "initial",
         "title": "业务数据概览",
@@ -150,7 +145,7 @@ def build_initial_dashboard(
                 "当前数据记录",
                 relevance=0.92,
                 size="hero",
-                subtitle=f"来自 {snapshot} 的已画像业务记录",
+                subtitle="已完成画像的业务记录",
                 value=int(summary.get("total_row_count") or sum(tables.values())),
                 source="知识画像",
                 unit="条",

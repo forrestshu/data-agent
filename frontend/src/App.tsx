@@ -15,6 +15,7 @@ import {
   Square,
   Sparkles,
   Sun,
+  TableProperties,
   TrendingUp,
   X,
 } from 'lucide-react'
@@ -247,7 +248,7 @@ function AssistantAnswer({
     <section className="answer-section" aria-labelledby="answer-title" aria-live="polite">
       <div className="section-heading">
         <h2 id="answer-title" className="answer-heading">
-          <img src="/in-order-logo.png" alt="IN-ORDER" width="128" height="14" />
+          <img src="/logo.png" alt="IN-ORDER" width="128" height="14" />
           <span aria-hidden="true">：</span>
         </h2>
       </div>
@@ -1085,8 +1086,11 @@ function DashboardPage({
         <textarea
           id="dashboard-question"
           value={question}
-          placeholder="例如：查看采购订单到货进度、销售订单发货情况，或项目工单完工情况"
+          placeholder={composerExpanded
+            ? '例如：查看采购订单到货进度、销售订单发货情况，或项目工单完工情况'
+            : ''}
           onChange={(event) => setQuestion(event.target.value)}
+          onPointerDown={() => setComposerExpanded(true)}
           onFocus={() => setComposerExpanded(true)}
           onKeyDown={(event) => {
             if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return

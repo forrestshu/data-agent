@@ -1,4 +1,4 @@
-"""精确查询 Agent：用语义层约束 Text-to-SQL，并基于真实结果回答。"""
+"""数据查询 Agent：用语义层约束 Text-to-SQL，并基于真实结果回答。"""
 
 from __future__ import annotations
 
@@ -165,7 +165,7 @@ class SQLGenerationError(ValueError):
     """生成边界异常：模型连续两次不能产生可安全执行的语义层约束 SQL。"""
 
 
-class AIQueryAgent:
+class DataQueryAgent:
     """查询 Agent：模型负责理解和写 SQL，语义层与 AST 守卫负责事实和安全。"""
 
     AUTO_ROUTE_THRESHOLD = 0.65
@@ -592,42 +592,6 @@ class AIQueryAgent:
             ),
         )
 
-    @staticmethod
-    def _fallback_answer(result: QueryResult) -> str:
-        """表达降级：测试模式下仍诚实概括真实结果，不推测数据库之外的信息。"""
-
-        if not result.rows:
-            return "当前数据源中没有找到符合条件的数据。"
-        if len(result.rows) == 1:
-            facts = "；".join(
-                f"{key}：{value if value is not None else '暂无数据'}"
-                for key, value in result.rows[0].items()
-            )
-            return f"查询结果为：{facts}。"
-        return f"共返回 {len(result.rows)} 条数据，具体记录见下方数据依据。"
-
-    @staticmethod
-    def _answer_conflicts_with_evidence(answer: str, result: QueryResult) -> bool:
-        """回答校验层：阻断空结果误报或把 500 行预览误当完整总数。"""
-
-        if not result.rows:
-            return False
-        normalized = answer.replace(" ", "")
-        empty_phrases = (
-            "未找到符合条件的数据",
-            "没有找到符合条件的数据",
-            "未查询到符合条件的数据",
-            "没有查询到符合条件的数据",
-        )
-        if any(phrase in normalized for phrase in empty_phrases):
-            return True
-        if result.has_more:
-            plain_total = str(result.total_count)
-            formatted_total = f"{result.total_count:,}"
-            if plain_total not in normalized and formatted_total not in normalized:
-                return True
-        return False
-
     def localize_result_columns(
         self,
         original_question: str,
@@ -664,16 +628,6 @@ class AIQueryAgent:
                 user_prompt,
                 max_tokens=1000,
             )
-            if self._answer_conflicts_with_evidence(answer, result):
-                logger.warning("自然语言回答与查询证据矛盾，尝试自动重写一次")
-                corrected = self.llm_client.complete_text(
-                    system_prompt + "\n\n" + load_prompt("answer_retry.md"),
-                    user_prompt,
-                    max_tokens=1000,
-                )
-                if self._answer_conflicts_with_evidence(corrected, result):
-                    return self._fallback_answer(result), False
-                return corrected, True
             return answer, True
         except LLMUnavailable:
             raise

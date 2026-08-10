@@ -12,7 +12,7 @@ from data_agent.llm import LLMClient, LLMUnavailable
 
 
 class PlanningAnalysis(BaseModel):
-    """精确查询与 Dashboard 共享的最小规划协议。"""
+    """数据查询与 Dashboard 共享的最小规划协议。"""
 
     status: Literal["ready", "clarification_required", "unsupported"]
     confidence: float = Field(default=0.75, ge=0, le=1)

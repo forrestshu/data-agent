@@ -2,7 +2,6 @@
   "catalog_version": "2026-08-05T15:45:49+08:00",
   "source": "data_agent_2026_07_15.sqlite",
   "known_limitations": [
-    "SQLite 业务对象是离线快照，不代表实时业务状态。",
     "关联覆盖率只证明当前快照中的数据关系。",
     "采购订单行缺少明确行号，Company + PONum + PartNum 仍可能产生多对多连接。",
     "项目和销售视图缺少统一客户代码，客户名称不是稳定连接键。",

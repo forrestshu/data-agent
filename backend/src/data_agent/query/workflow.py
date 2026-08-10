@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .agents.exact import AIQueryAgent, QueryUnderstanding
+from .agents.data_query import DataQueryAgent, QueryUnderstanding
 from data_agent.knowledge.catalog import KnowledgeCatalog, load_catalog
 from data_agent.knowledge.profile import assert_view_ready
 from .dashboard_view import DashboardPayload, build_query_dashboard
@@ -17,7 +17,7 @@ from .contracts import RouteConfirmationRequired
 
 
 @dataclass(frozen=True)
-class ExactQueryOutcome:
+class QueryOutcome:
     understanding: QueryUnderstanding
     result: QueryResult
     answer: str
@@ -67,7 +67,7 @@ class QueryRuntime:
         for view in source_views:
             assert_view_ready(self.profile, view)
 
-    def execute_exact(
+    def execute_query(
         self,
         question: str,
         *,
@@ -75,8 +75,8 @@ class QueryRuntime:
         clarification_answer: str | None,
         clarification_history: tuple[tuple[str, str], ...],
         limit: int,
-    ) -> ExactQueryOutcome:
-        agent = AIQueryAgent(
+    ) -> QueryOutcome:
+        agent = DataQueryAgent(
             self.catalog,
             self.llm,
             database_profile=self.profile,
@@ -101,7 +101,7 @@ class QueryRuntime:
         )
         result = agent.localize_result_columns(understanding.effective_question, result)
         answer, generated = agent.answer(understanding.effective_question, result)
-        return ExactQueryOutcome(understanding, result, answer, generated)
+        return QueryOutcome(understanding, result, answer, generated)
 
     def execute_dashboard(
         self,

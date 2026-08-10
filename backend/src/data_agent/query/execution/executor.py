@@ -93,11 +93,7 @@ class ReadOnlyQueryService:
         plan: QueryPlan,
         rows: tuple[dict[str, Any], ...],
     ) -> tuple[str, ...]:
-        database = self.database_profile.get("database", {})
-        snapshot = database.get("file_name", self.database_path.name)
-        started_at = database.get("snapshot_started_at")
-        suffix = f"（源快照时间 {started_at}）" if started_at else ""
-        notices = [f"查询结果来自 {snapshot} SQLite 离线快照{suffix}，不是实时 ERP 数据。"]
+        notices: list[str] = []
         if not rows:
             notices.append("未查到符合条件的记录。")
         selected_columns = set(rows[0]) if rows else set()

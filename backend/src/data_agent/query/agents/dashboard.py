@@ -112,7 +112,7 @@ class DashboardUnsupportedQuery(DashboardPlanningError):
 
 
 class DashboardAgent:
-    """Dashboard Agent：专注概况探索，不复用精确数据查询的意图与回答提示词。"""
+    """Dashboard Agent：专注概况探索，不复用数据查询的意图与回答提示词。"""
 
     def __init__(
         self,
@@ -374,7 +374,7 @@ class DashboardAgent:
             reason=analysis.route_reason,
             matched_terms=tuple(analysis.matched_concepts),
             alternatives=tuple(analysis.source_views[1:]),
-            # Dashboard 允许模型自动选择最相关视图，不沿用精确查询的低置信度确认停顿。
+            # Dashboard 允许模型自动选择最相关视图，不沿用数据查询的低置信度确认停顿。
             match_type="confirmed" if confirmed_view else "ai",
             requires_confirmation=False,
             confirmation_question=None,
