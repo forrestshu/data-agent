@@ -9,19 +9,21 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Any
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlglot import exp, parse_one
 
-from .support import (
-    effective_question,
-    localize_result_columns as localize_query_result,
-)
-from data_agent.knowledge.catalog import KnowledgeCatalog
+from data_agent.knowledge.semantic_catalog import SemanticCatalog
 from data_agent.database import Database
 from data_agent.query.execution.executor import QueryResult
 from data_agent.llm import LLMClient, LLMUnavailable
-from data_agent.knowledge.prompt import build_prompt_knowledge, load_prompt
-from .planning import PlanningAnalysis, repair_plan
+from data_agent.knowledge.prompt import build_semantic_context, load_prompt
+from .planning import (
+    PlanningAnalysis,
+    RepairFn,
+    effective_question,
+    parse_planning_payload,
+    plan_with_ai,
+)
 from data_agent.query.contracts import RouteDecision
 from data_agent.query.execution.guard import SQLGuard, SQLValidationError
 
@@ -63,7 +65,7 @@ class IntentAnalysis(PlanningAnalysis):
     """模型输出契约：支持生成 SQL、请求澄清或说明当前知识无法回答。"""
 
     confidence: float = Field(default=0.8, ge=0, le=1)
-    intent_summary: str = "执行 ERP 数据查询"
+    intent_summary: str = "执行数据查询"
     filter_constraints: list[QueryConstraint] = Field(default_factory=list)
     requested_fields: list[str] = Field(default_factory=list)
     missing_information: list[str] = Field(default_factory=list)
@@ -103,7 +105,7 @@ class IntentAnalysis(PlanningAnalysis):
 
         if value is not None and str(value).strip():
             return str(value).strip()
-        return "执行 ERP 数据查询"
+        return "执行数据查询"
 
     @field_validator(
         "requested_fields",
@@ -172,26 +174,34 @@ class DataQueryAgent:
 
     def __init__(
         self,
-        catalog: KnowledgeCatalog,
+        catalog: SemanticCatalog,
         llm_client: LLMClient | None,
         database_profile: dict[str, Any] | None = None,
         source: Database | None = None,
+        sql_guard: SQLGuard | None = None,
     ) -> None:
-        """装配 Agent；知识画像约束 SQLite 查询范围。"""
+        """装配 Agent；知识画像约束 SQLite 查询范围。
+
+        sql_guard 应与执行器共用同一实例；未注入时仅便于单测自行构造。
+        """
 
         self.catalog = catalog
         self.llm_client = llm_client
         self.database_profile = database_profile or {}
         self.source = source
-        self.sql_guard = SQLGuard(catalog, self.database_profile, source=source)
+        self.sql_guard = sql_guard or SQLGuard(
+            catalog,
+            self.database_profile,
+            source=source,
+        )
 
     def _knowledge_context(self) -> str:
         """提示构建：只发送视图用途、粒度、字段含义和极简关联，不发送业务行。"""
 
-        return build_prompt_knowledge(self.catalog)
+        return build_semantic_context(self.catalog)
 
     def _system_prompt(self) -> str:
-        """返回小于 5000 字符的 Text-to-SQL 指令与第 3 节语义卡片。"""
+        """返回 Text-to-SQL 指令与包含字段描述的紧凑语义卡片。"""
 
         return load_prompt("text_to_sql.md", knowledge_context=self._knowledge_context())
 
@@ -199,71 +209,27 @@ class DataQueryAgent:
     def _parse_analysis(payload: dict[str, Any]) -> IntentAnalysis:
         """协议解析：优先保留完整解释；辅助字段异常时退回最小可执行 JSON 外壳。"""
 
-        try:
-            return IntentAnalysis.model_validate(payload)
-        except ValidationError as full_error:
-            status = str(payload.get("status", "")).casefold().strip()
-            status_aliases = {
-                "success": "ready",
-                "completed": "ready",
-                "clarify": "clarification_required",
-                "clarification": "clarification_required",
-                "need_clarification": "clarification_required",
-                "not_supported": "unsupported",
-            }
-            normalized_status = status_aliases.get(status, status)
-            common_keys = {
+        return parse_planning_payload(
+            IntentAnalysis,
+            payload,
+            common_keys={
                 "status",
                 "intent_summary",
                 "route_reason",
                 "matched_concepts",
                 "assumptions",
-            }
-            if normalized_status == "ready":
-                allowed_keys = common_keys | {
-                    "sql",
-                    "parameters",
-                    "display_units",
-                }
-            elif normalized_status == "clarification_required":
-                allowed_keys = common_keys | {
-                    "clarification_question",
-                    "clarification_kind",
-                    "clarification_options",
-                    "clarification_unit",
-                    "filter_constraints",
-                    "requested_fields",
-                    "missing_information",
-                    "source_views",
-                }
-            else:
-                allowed_keys = common_keys
-            minimal_payload = {
-                key: value for key, value in payload.items() if key in allowed_keys
-            }
-            try:
-                return IntentAnalysis.model_validate(minimal_payload)
-            except ValidationError:
-                # 核心状态、SQL 或参数仍不合法时保留原始错误，交给现有一次模型修复流程。
-                raise full_error
-
-    def _repair_analysis(
-        self,
-        effective_question: str,
-        payload: dict[str, Any],
-        issue: str,
-    ) -> IntentAnalysis:
-        """一次修复：把契约或 SQL 守卫反馈给模型，但不放宽任何安全规则。"""
-        return repair_plan(
-            self.llm_client,
-            system_prompt=self._system_prompt(),
-            question=effective_question,
-            payload=payload,
-            issue=issue,
-            parser=self._parse_analysis,
-            error_factory=SQLGenerationError,
-            label="Text-to-SQL",
-            max_tokens=2200,
+            },
+            ready_keys={"sql", "parameters", "display_units"},
+            clarification_keys={
+                "clarification_question",
+                "clarification_kind",
+                "clarification_options",
+                "clarification_unit",
+                "filter_constraints",
+                "requested_fields",
+                "missing_information",
+                "source_views",
+            },
         )
 
     def _validate_ready(
@@ -410,7 +376,7 @@ class DataQueryAgent:
             for name, detail in view.column_semantics.items():
                 if name.casefold() not in requested:
                     continue
-                label = str(detail.get("label_zh", "")).strip()
+                label = str(detail.get("business_name", "")).strip()
                 if label:
                     terms.add(label)
                     # “供应商名称”与自然问法“哪个供应商”应识别为同一输出概念。
@@ -449,81 +415,62 @@ class DataQueryAgent:
             )
         return None
 
-    def _analyze_with_ai(
+    def _refine_analysis(
         self,
-        effective_question: str,
-        limit: int,
-        previous_clarifications: tuple[str, ...] = (),
+        analysis: IntentAnalysis,
+        repair: RepairFn,
+        previous_clarifications: tuple[str, ...],
     ) -> IntentAnalysis:
-        """生成入口：先请求 SQL，契约或 AST 不合格时自动修复一次。"""
-
-        if self.llm_client is None:
-            raise LLMUnavailable("DeepSeek 未配置。")
-        payload = self.llm_client.complete_json(
-            self._system_prompt(),
-            effective_question,
-            max_tokens=2200,
-        )
-        try:
-            analysis = self._parse_analysis(payload)
-        except ValidationError as error:
-            logger.warning(
-                "Text-to-SQL 契约第一次校验失败，尝试自动修复：%s",
-                error.errors(include_input=False),
-            )
-            analysis = self._repair_analysis(
-                effective_question,
-                payload,
-                "INVALID_JSON_CONTRACT",
-            )
+        """查询专用 refine：拦截重复追问与无效澄清，再进入共享 SQL 校验循环。"""
 
         if analysis.status == "clarification_required" and self._repeats_clarification(
             analysis.clarification_question,
             previous_clarifications,
         ):
             logger.warning("模型重复询问已回答信息，尝试自动修复一次")
-            analysis = self._repair_analysis(
-                effective_question,
-                analysis.model_dump(),
-                "REPEATED_CLARIFICATION",
-            )
+            analysis = repair(analysis.model_dump(), "REPEATED_CLARIFICATION")
             if analysis.status == "clarification_required" and self._repeats_clarification(
                 analysis.clarification_question,
                 previous_clarifications,
             ):
                 raise SQLGenerationError("模型连续重复询问用户已经回答的信息。")
 
-        # 澄清状态没有 SQL 可交给 AST 守卫，因此这里单独核验“为什么必须追问”；无效追问自动修复一次。
         clarification_issue = self._clarification_issue(analysis)
         if clarification_issue is not None:
             logger.warning("模型提出了无效追问，尝试自动修复：%s", clarification_issue)
-            analysis = self._repair_analysis(
-                effective_question,
-                analysis.model_dump(),
-                clarification_issue,
-            )
+            analysis = repair(analysis.model_dump(), clarification_issue)
             repaired_issue = self._clarification_issue(analysis)
             if repaired_issue is not None:
                 raise SQLGenerationError("模型连续两次提出无法由语义层支持的追问。")
-
-        if analysis.status == "ready":
-            try:
-                return self._validate_ready(analysis, limit, effective_question)
-            except SQLValidationError as first_error:
-                logger.warning("模型 SQL 第一次未通过守卫，尝试自动修复：%s", first_error)
-                repaired = self._repair_analysis(
-                    effective_question,
-                    analysis.model_dump(),
-                    str(first_error),
-                )
-                if repaired.status != "ready":
-                    return repaired
-                try:
-                    return self._validate_ready(repaired, limit, effective_question)
-                except SQLValidationError as second_error:
-                    raise SQLGenerationError("模型连续两次未生成可安全执行的查询。") from second_error
         return analysis
 
+    def _analyze_with_ai(
+        self,
+        question: str,
+        limit: int,
+        previous_clarifications: tuple[str, ...] = (),
+    ) -> IntentAnalysis:
+        """生成入口：走共享规划骨架，澄清策略由 refine 钩子保留。"""
+
+        def validate_ready(analysis: IntentAnalysis) -> IntentAnalysis:
+            return self._validate_ready(analysis, limit, question)
+
+        def refine(analysis: IntentAnalysis, repair: RepairFn) -> IntentAnalysis:
+            return self._refine_analysis(analysis, repair, previous_clarifications)
+
+        return plan_with_ai(
+            llm_client=self.llm_client,
+            system_prompt=self._system_prompt(),
+            question=question,
+            parser=self._parse_analysis,
+            validate_ready=validate_ready,
+            error_factory=SQLGenerationError,
+            label="Text-to-SQL",
+            max_tokens=2200,
+            max_sql_repairs=1,
+            contract_issue="INVALID_JSON_CONTRACT",
+            refine=refine,
+        )
     def understand(
         self,
         question: str,
@@ -591,17 +538,6 @@ class DataQueryAgent:
                 route_reason=analysis.route_reason,
             ),
         )
-
-    def localize_result_columns(
-        self,
-        original_question: str,
-        result: QueryResult,
-    ) -> QueryResult:
-        """字段展示层：仅让模型补充知识语义和本地词典均未覆盖的英文结果列名。"""
-
-        if self.llm_client is None:
-            raise LLMUnavailable("DeepSeek 未配置，无法翻译查询字段。")
-        return localize_query_result(self.llm_client, original_question, result)
 
     def answer(self, original_question: str, result: QueryResult) -> tuple[str, bool]:
         """回答层：只把有限查询结果和质量提示交给模型，不让 SQL 文本改变回答事实。"""

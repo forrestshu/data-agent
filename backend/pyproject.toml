@@ -1,7 +1,7 @@
 [project]
-name = "erp-data-agent"
+name = "data-agent"
 version = "0.1.0"
-description = "ERP 自然语言查询与 SQLite 只读代理"
+description = "自然语言查询与 SQLite 只读代理"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.139.2",

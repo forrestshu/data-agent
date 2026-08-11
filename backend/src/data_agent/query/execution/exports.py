@@ -41,9 +41,3 @@ class QueryExportRegistry:
     def get(self, download_id: str) -> QueryExportPlan | None:
         self._purge(time.monotonic())
         return self._plans.get(download_id)
-
-    def consume(self, download_id: str) -> QueryExportPlan | None:
-        plan = self.get(download_id)
-        if plan is not None:
-            self._plans.pop(download_id, None)
-        return plan

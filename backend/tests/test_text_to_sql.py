@@ -6,12 +6,12 @@ import unittest
 from typing import Any
 
 from data_agent.query.agents.data_query import DataQueryAgent
-from data_agent.knowledge.catalog import load_catalog
+from data_agent.knowledge.semantic_catalog import load_semantic_catalog
 from data_agent.query.agents.dashboard import DashboardAgent
-from data_agent.query.execution.executor import ReadOnlyQueryService
+from data_agent.query.execution.executor import ReadOnlyQueryExecutor
 from data_agent.database import Database
-from data_agent.knowledge.profile import load_profile
-from data_agent.knowledge.prompt import build_prompt_knowledge
+from data_agent.knowledge.database_profile import load_database_profile
+from data_agent.knowledge.prompt import build_semantic_context
 from data_agent.query.contracts import RouteDecision
 from data_agent.settings import DATABASE_PROFILE_PATH
 from data_agent.query.execution.guard import SQLGuard, SQLValidationError
@@ -192,13 +192,14 @@ class TextToSQLTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         """加载当前语义层与真实数据库画像，所有测试保持只读。"""
 
-        cls.catalog = load_catalog()
-        cls.profile = load_profile(DATABASE_PROFILE_PATH)
+        cls.catalog = load_semantic_catalog()
+        cls.profile = load_database_profile(DATABASE_PROFILE_PATH)
         cls.guard = SQLGuard(cls.catalog, cls.profile)
-        cls.service = ReadOnlyQueryService(
+        cls.executor = ReadOnlyQueryExecutor(
             Database.from_environment(),
             cls.catalog,
             database_profile=cls.profile,
+            guard=cls.guard,
         )
 
     def test_prompt_prefers_precomputed_business_fields_and_preserves_parameters(self) -> None:
@@ -211,7 +212,7 @@ class TextToSQLTests(unittest.TestCase):
         )
         prompt = agent._system_prompt()
 
-        self.assertLess(len(prompt), 5000)
+        self.assertLess(len(prompt), 8200)
         self.assertIn("AvgPrice直接查询", prompt)
         self.assertIn("不用AVG(AvgPrice)", prompt)
         self.assertIn("默认不二次SUM", prompt)
@@ -219,28 +220,36 @@ class TextToSQLTests(unittest.TestCase):
         self.assertIn("才分别用ProjectID、JobNum、PartNum", prompt)
         self.assertIn("PONum、OrderQty、ReceivedQty、InvoiceQty、RemainQty", prompt)
         self.assertIn("应付只用Payables", prompt)
+        self.assertIn("JobNum 是工单号，不是数量字段", prompt)
+        self.assertIn("JobQty 是工单计划生产数量", prompt)
+        self.assertIn("多少张工单/工单张数", prompt)
         self.assertIn("工单末道完成量用JobOprCompQty", prompt)
         self.assertIn("威图悬臂箱底座，A250063", prompt)
 
     def test_compact_prompt_knowledge_keeps_all_views_and_fields(self) -> None:
-        """极简语义卡片必须保留第 3 节的全部视图和业务字段。"""
+        """紧凑语义卡片必须保留全部视图、业务名称、字段描述和精选示例。"""
 
-        knowledge = build_prompt_knowledge(self.catalog)
-        self.assertLess(len(knowledge), 3600)
+        knowledge = build_semantic_context(self.catalog)
+        self.assertLess(len(knowledge), 6800)
         for view in self.catalog.views:
             self.assertIn(view.name, knowledge)
-            for column in view.column_semantics:
+            self.assertIn(view.business_name, knowledge)
+            for column, semantic in view.column_semantics.items():
                 self.assertIn(column, knowledge)
+                if column != "Company":
+                    self.assertIn(semantic["business_name"], knowledge)
+                    self.assertIn(semantic["description"].removesuffix("。"), knowledge)
+        self.assertIn("例：Approved、Draft、Rejected", knowledge)
 
     def test_dashboard_prompt_uses_same_compact_semantic_projection(self) -> None:
-        """Dashboard 不能重新发送完整治理 JSON，整体提示词也必须低于 5000 字符。"""
+        """Dashboard 复用同一份紧凑语义投影，不发送完整治理 JSON。"""
 
         prompt = DashboardAgent(
             self.catalog,
             None,
             database_profile=self.profile,
         )._system_prompt()
-        self.assertLess(len(prompt), 5000)
+        self.assertLess(len(prompt), 8200)
         for view in self.catalog.views:
             self.assertIn(view.name, prompt)
 
@@ -329,7 +338,7 @@ class TextToSQLTests(unittest.TestCase):
             requires_confirmation=False,
             confirmation_question=None,
         )
-        result = self.service.ask_generated_sql(
+        result = self.executor.execute_generated_sql(
             "有没有螺栓之类的",
             "SELECT PartNum, PartDescription FROM AiQueryPartV WHERE PartDescription LIKE ? LIMIT 20",
             ("%螺栓%",),
@@ -354,7 +363,7 @@ class TextToSQLTests(unittest.TestCase):
             requires_confirmation=False,
             confirmation_question=None,
         )
-        result = self.service.ask_generated_sql(
+        result = self.executor.execute_generated_sql(
             "查询描述为GCr15圆钢Φ45的物料编码",
             "SELECT PartNum, PartDescription FROM AiQueryPartV WHERE PartDescription LIKE ?",
             ("%GCr15圆钢Φ45%",),
@@ -379,7 +388,7 @@ class TextToSQLTests(unittest.TestCase):
             requires_confirmation=False,
             confirmation_question=None,
         )
-        result = self.service.ask_generated_sql(
+        result = self.executor.execute_generated_sql(
             "查询GCr15圆钢Φ45还有多少库存",
             (
                 "SELECT SUM(Qty) AS TotalQty FROM AiQueryPartOnHandV "
@@ -409,7 +418,7 @@ class TextToSQLTests(unittest.TestCase):
             requires_confirmation=False,
             confirmation_question=None,
         )
-        result = self.service.ask_generated_sql(
+        result = self.executor.execute_generated_sql(
             "查询描述包含钢板的物料编码",
             "SELECT PartNum, PartDescription FROM AiQueryPartV WHERE PartDescription LIKE ?",
             ("%钢板%",),
@@ -433,7 +442,7 @@ class TextToSQLTests(unittest.TestCase):
             requires_confirmation=False,
             confirmation_question=None,
         )
-        result = self.service.ask_generated_sql(
+        result = self.executor.execute_generated_sql(
             "查询描述为GCr15圆钢Φ45的物料编码",
             "SELECT PartNum, PartDescription FROM AiQueryPartV WHERE PartDescription LIKE ?",
             ("%GCr15%Φ45%",),

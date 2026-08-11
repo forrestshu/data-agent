@@ -1,6 +1,6 @@
-# ERP Data Agent
+# Data Agent
 
-一个面向 ERP SQLite 快照的自然语言查询系统。DeepSeek 负责理解问题和生成参数化 SQL，后端只允许查询语义层批准的视图与字段，并通过只读 SQLite 连接执行。
+一个面向 SQLite 快照的自然语言查询系统。DeepSeek 负责理解问题和生成参数化 SQL，后端只允许查询语义层批准的视图与字段，并通过只读 SQLite 连接执行。
 
 ## 项目结构
 
@@ -53,16 +53,8 @@ pnpm --dir frontend install
 
 ## 本地开发
 
-终端一：
-
 ```bash
-uv run --project backend data-agent
-```
-
-终端二：
-
-```bash
-pnpm --dir frontend dev
+./dev.sh
 ```
 
 - 前端：<http://127.0.0.1:5173>
@@ -72,7 +64,9 @@ pnpm --dir frontend dev
 ## 验证
 
 ```bash
-./scripts/check.sh
+uv run --project backend python -m unittest discover -s backend/tests -q
+pnpm --dir frontend exec tsc --noEmit
+pnpm --dir frontend lint
 ```
 
-该脚本运行后端测试、端到端测试和 TypeScript 类型检查，不执行生产构建。
+这些命令运行后端测试、TypeScript 类型检查和前端静态检查，不执行生产构建。

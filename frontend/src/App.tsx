@@ -566,7 +566,7 @@ function DashboardView({
         <div
           className="dashboard-grid"
           data-widget-count={dashboard.widgets.length}
-          key={`${dashboard.mode}-${dashboard.question ?? dashboard.generated_at}`}
+          key={`${dashboard.mode}-${dashboard.question ?? 'initial'}`}
         >
           {dashboard.widgets.map((widget, index) => (
             <DashboardWidgetView
@@ -1071,6 +1071,10 @@ function DashboardPage({
     setComposerExpanded(!hasQueryDashboard)
   }, [dashboard?.question, hasQueryDashboard])
 
+  useEffect(() => {
+    if (notice) setComposerExpanded(true)
+  }, [notice])
+
   const composer = (
     <form
       className="query-composer dashboard-composer"
@@ -1143,7 +1147,9 @@ function DashboardPage({
         dashboard={dashboard}
         loading={loading}
         composer={composer}
-        onSurfaceInteraction={() => setComposerExpanded(false)}
+        onSurfaceInteraction={() => {
+          if (!notice) setComposerExpanded(false)
+        }}
       />
     </section>
   )

@@ -37,7 +37,7 @@
         "PartNum",
         "PartDescription"
       ],
-      "chinese_name": "物料基础视图",
+      "business_name": "物料基础视图",
       "description": "该视图是物料主数据入口，用于根据物料编码或描述确认物料是否已经建档，并查询物料的基础名称信息。Excel 中工程服务中心、研发中心和市场部都使用它进行物料编码查询、物料名称规格检查和物料存在性确认。每一行表示某公司下的一项物料。",
       "join_columns": [
         "Company",
@@ -45,20 +45,25 @@
       ],
       "column_semantics": {
         "Company": {
-          "label_zh": "公司代码",
-          "description": "物料所属公司的代码。"
+          "business_name": "公司代码",
+          "description": "用于区分记录所属公司的业务代码。"
         },
         "CompanyName": {
-          "label_zh": "公司名称",
-          "description": "物料所属公司的名称。"
+          "business_name": "公司名称",
+          "description": "与公司代码对应的公司名称。"
         },
         "PartNum": {
-          "label_zh": "物料编码",
-          "description": "物料编码，也可理解为料号或图号。"
+          "business_name": "物料编码",
+          "description": "物料在 ERP 中的业务编码，也可按料号或图号理解。",
+          "value_examples": [
+            "6100000954",
+            "K650100134",
+            "24054-1-DHLW45-7S-H-E-BOM-C"
+          ]
         },
         "PartDescription": {
-          "label_zh": "物料描述",
-          "description": "物料名称、规格或描述。"
+          "business_name": "物料描述",
+          "description": "物料的名称、型号或规格说明。"
         }
       }
     },
@@ -96,7 +101,7 @@
         "BinName",
         "Qty"
       ],
-      "chinese_name": "物料库存视图",
+      "business_name": "物料库存视图",
       "description": "该视图用于查询物料当前库存数量以及库存所在的库位或货位。Excel 中市场部用它判断是否有库存可以发货，工程服务中心和研发中心用它查询物料库存及库位。每一行表示一个物料在一个库位中的库存记录，因此同一物料可能出现多行。",
       "join_columns": [
         "Company",
@@ -104,32 +109,42 @@
       ],
       "column_semantics": {
         "Company": {
-          "label_zh": "公司代码",
-          "description": "库存所属公司的代码。"
+          "business_name": "公司代码",
+          "description": "用于区分记录所属公司的业务代码。"
         },
         "CompanyName": {
-          "label_zh": "公司名称",
-          "description": "库存所属公司的名称。"
+          "business_name": "公司名称",
+          "description": "与公司代码对应的公司名称。"
         },
         "PartNum": {
-          "label_zh": "物料编码",
-          "description": "库存物料编码。"
+          "business_name": "物料编码",
+          "description": "记录所对应物料的 ERP 编码。"
         },
         "PartDescription": {
-          "label_zh": "物料描述",
-          "description": "库存物料的名称或规格描述。"
+          "business_name": "物料描述",
+          "description": "物料的名称、型号或规格说明。"
         },
         "BinNum": {
-          "label_zh": "库位编码",
-          "description": "库位或货位编码。"
+          "business_name": "库位编码",
+          "description": "库存所在库位或货位的编码。",
+          "value_examples": [
+            "D000001",
+            "HG",
+            "DM1"
+          ]
         },
         "BinName": {
-          "label_zh": "库位名称",
-          "description": "库位或货位名称。"
+          "business_name": "库位名称",
+          "description": "库存所在库位或货位的名称。",
+          "value_examples": [
+            "D区地面上",
+            "质检合格品区",
+            "DM1货位"
+          ]
         },
         "Qty": {
-          "label_zh": "现有量",
-          "description": "该物料在该库位中的现有数量。"
+          "business_name": "现有量",
+          "description": "物料在当前库位中的现有库存数量。"
         }
       }
     },
@@ -165,7 +180,7 @@
         "ECOMtl_MtlPartNum",
         "MtlPartDescription"
       ],
-      "chinese_name": "BOM 结构视图",
+      "business_name": "BOM 结构视图",
       "description": "该视图用于反向查询某个子物料被哪些上级部件使用，也可以查看上级部件与子物料之间的 BOM 关系。Excel 中研发中心用它查询物料用于哪个部件。每一行表示一组上级部件与子物料的对应关系。",
       "join_columns": [
         "Company",
@@ -174,32 +189,37 @@
       ],
       "column_semantics": {
         "Company": {
-          "label_zh": "公司代码",
-          "description": "BOM 所属公司的代码。"
+          "business_name": "公司代码",
+          "description": "用于区分记录所属公司的业务代码。"
         },
         "CompanyName": {
-          "label_zh": "公司名称",
-          "description": "BOM 所属公司的名称。"
+          "business_name": "公司名称",
+          "description": "与公司代码对应的公司名称。"
         },
         "Plant": {
-          "label_zh": "工厂",
-          "description": "BOM 所属的工厂或生产地点。"
+          "business_name": "工厂",
+          "description": "业务记录所属的工厂或生产地点。",
+          "value_examples": [
+            "MfgSys",
+            "M1",
+            "M2"
+          ]
         },
         "PartNum": {
-          "label_zh": "物料编码",
-          "description": "上级部件或母件的物料编码。"
+          "business_name": "上级部件编码",
+          "description": "BOM 关系中上级部件或母件的物料编码。"
         },
         "PartDescription": {
-          "label_zh": "物料描述",
-          "description": "上级部件或母件的名称及规格描述。"
+          "business_name": "上级部件描述",
+          "description": "BOM 上级部件或母件的名称、型号或规格说明。"
         },
         "ECOMtl_MtlPartNum": {
-          "label_zh": "子物料编码",
-          "description": "BOM 中的子物料编码。"
+          "business_name": "子物料编码",
+          "description": "BOM 关系中的子物料编码。"
         },
         "MtlPartDescription": {
-          "label_zh": "子物料描述",
-          "description": "BOM 中子物料的名称及规格描述。"
+          "business_name": "子物料描述",
+          "description": "BOM 子物料的名称、型号或规格说明。"
         }
       }
     },
@@ -240,55 +260,75 @@
         "NewPONum",
         "AvgPrice"
       ],
-      "chinese_name": "采购价格视图",
+      "business_name": "采购价格视图",
       "description": "该视图用于按物料查询采购价格相关信息，包括最新采购价、最新供应商、最新采购订单、采购提前期和平均采购价。Excel 中市场部在报价时用它估算零件成本。每一行代表一个物料的采购价格摘要信息。",
       "join_columns": [
         "Company"
       ],
       "column_semantics": {
         "Company": {
-          "label_zh": "公司代码",
-          "description": "采购业务所属公司的代码。"
+          "business_name": "公司代码",
+          "description": "用于区分记录所属公司的业务代码。"
         },
         "CompanyName": {
-          "label_zh": "公司名称",
-          "description": "采购业务所属公司的名称。"
+          "business_name": "公司名称",
+          "description": "与公司代码对应的公司名称。"
         },
         "PartNum": {
-          "label_zh": "物料编码",
-          "description": "采购物料编码。"
+          "business_name": "物料编码",
+          "description": "记录所对应物料的 ERP 编码。"
         },
         "LineDesc": {
-          "label_zh": "物料行描述",
-          "description": "采购订单物料行的描述。"
+          "business_name": "物料行描述",
+          "description": "订单行保存的物料名称或规格文本，可能不同于物料主数据描述。"
         },
         "IUM": {
-          "label_zh": "库存计量单位",
-          "description": "物料的库存计量单位。"
+          "business_name": "库存计量单位",
+          "description": "物料在库存管理中使用的计量单位代码。",
+          "value_examples": [
+            "EA",
+            "KG",
+            "M"
+          ]
         },
         "Plant": {
-          "label_zh": "工厂",
-          "description": "采购物料所属的工厂或地点。"
+          "business_name": "工厂",
+          "description": "业务记录所属的工厂或生产地点。",
+          "value_examples": [
+            "MfgSys",
+            "Spare",
+            "M1"
+          ]
         },
         "LeadTime": {
-          "label_zh": "采购提前期",
-          "description": "采购提前期，表示从采购到预计可获得物料所需的时间。"
+          "business_name": "采购提前期",
+          "description": "采购该物料通常需要的提前时间。",
+          "value_examples": [
+            "0",
+            "15",
+            "60"
+          ]
         },
         "NewPrice": {
-          "label_zh": "最新采购价",
-          "description": "该物料的最新采购价格。"
+          "business_name": "最新采购价",
+          "description": "物料最近一笔采购记录的采购单价。"
         },
         "NewVendorName": {
-          "label_zh": "最新供应商名称",
-          "description": "最新一笔采购记录对应的供应商名称。"
+          "business_name": "最新供应商名称",
+          "description": "最近一笔采购记录对应的供应商名称。"
         },
         "NewPONum": {
-          "label_zh": "最新采购订单号",
-          "description": "最新一笔采购记录对应的采购订单号。"
+          "business_name": "最新采购订单号",
+          "description": "最近一笔采购记录对应的内部采购订单号。",
+          "value_examples": [
+            "2054656",
+            "300019283",
+            "600000609"
+          ]
         },
         "AvgPrice": {
-          "label_zh": "平均采购价",
-          "description": "该物料的平均采购价格。**当前快照中此字段 58,784 行全部为空**，保留字段但不推测数值。"
+          "business_name": "平均采购价",
+          "description": "物料的平均采购单价；当前数据中该字段为空。"
         }
       }
     },
@@ -332,7 +372,7 @@
         "InspectionQty",
         "NetReceivedQty"
       ],
-      "chinese_name": "采购到货进度视图",
+      "business_name": "采购到货进度视图",
       "description": "该视图用于按采购订单、物料编码或物料行描述查询对应供应商，以及查看下单时间、需求时间、收货数量、在检数量及净收货数量。LineDesc 与 VendorName 位于同一采购订单物料行，可直接用描述筛选并返回供应商，无需跨视图关联。Excel 中工程服务中心用它查询物料预计到货时间和实际到货信息。每一行表示一条采购订单物料行。",
       "join_columns": [
         "Company",
@@ -342,55 +382,60 @@
       ],
       "column_semantics": {
         "Company": {
-          "label_zh": "公司代码",
-          "description": "采购订单所属公司的代码。"
+          "business_name": "公司代码",
+          "description": "用于区分记录所属公司的业务代码。"
         },
         "CompanyName": {
-          "label_zh": "公司名称",
-          "description": "采购订单所属公司的名称。"
+          "business_name": "公司名称",
+          "description": "与公司代码对应的公司名称。"
         },
         "PONum": {
-          "label_zh": "采购订单号",
-          "description": "公司内部采购订单号。"
+          "business_name": "采购订单号",
+          "description": "公司内部的采购订单编号。",
+          "value_examples": [
+            "2054656",
+            "300019283",
+            "600000609"
+          ]
         },
         "VendorID": {
-          "label_zh": "供应商代码",
-          "description": "供应商业务代码。"
+          "business_name": "供应商代码",
+          "description": "供应商在业务系统中的代码。"
         },
         "VendorName": {
-          "label_zh": "供应商名称",
-          "description": "供应商名称。"
+          "business_name": "供应商名称",
+          "description": "记录所对应的供应商名称。"
         },
         "OrderDate": {
-          "label_zh": "订单日期",
-          "description": "采购订单创建或下单日期。"
+          "business_name": "订单日期",
+          "description": "订单创建或下单的日期。"
         },
         "PartNum": {
-          "label_zh": "物料编码",
-          "description": "采购物料编码。"
+          "business_name": "物料编码",
+          "description": "记录所对应物料的 ERP 编码。"
         },
         "LineDesc": {
-          "label_zh": "物料行描述",
-          "description": "采购订单物料行描述。"
+          "business_name": "物料行描述",
+          "description": "订单行保存的物料名称或规格文本，可能不同于物料主数据描述。"
         },
         "OrderQty": {
-          "label_zh": "订单数量",
-          "description": "采购订单行的订购数量。"
+          "business_name": "订单数量",
+          "description": "订单行订购的物料数量。"
         },
         "DueDate": {
-          "label_zh": "需求日期",
-          "description": "采购订单行的需求或到期日期。"
+          "business_name": "需求日期",
+          "description": "业务记录对应的需求或到期日期。"
         },
         "ReceivedQty": {
-          "label_zh": "收货数量",
-          "description": "已收货数量。"
+          "business_name": "收货数量",
+          "description": "采购订单行累计完成的收货数量。"
         },
         "InspectionQty": {
-          "label_zh": "在检数量",
-          "description": "已到货但仍处于检验状态的数量。"
+          "business_name": "在检数量",
+          "description": "已经到货但仍处于检验流程中的数量。"
         },
         "NetReceivedQty": {
-          "label_zh": "收货净值",
+          "business_name": "收货净值",
           "description": "扣除相关调整后计入的净收货数量。"
         }
       }
@@ -437,7 +482,7 @@
         "RemainQty",
         "ApproveStatus_c"
       ],
-      "chinese_name": "采购追踪视图",
+      "business_name": "采购追踪视图",
       "description": "该视图用于采购订单全过程追踪，覆盖审批状态、订单数量、收货数量、开票数量和剩余数量。Excel 中采购部将它用于“采购追踪一览表”和“订单进度查询”。每一行表示一条采购订单物料行。",
       "join_columns": [
         "Company",
@@ -447,60 +492,70 @@
       ],
       "column_semantics": {
         "Company": {
-          "label_zh": "公司代码",
-          "description": "采购订单所属公司的代码。"
+          "business_name": "公司代码",
+          "description": "用于区分记录所属公司的业务代码。"
         },
         "CompanyName": {
-          "label_zh": "公司名称",
-          "description": "采购订单所属公司的名称。"
+          "business_name": "公司名称",
+          "description": "与公司代码对应的公司名称。"
         },
         "PONum": {
-          "label_zh": "采购订单号",
-          "description": "公司内部采购订单号。"
+          "business_name": "采购订单号",
+          "description": "公司内部的采购订单编号。",
+          "value_examples": [
+            "2054656",
+            "300019283",
+            "600000609"
+          ]
         },
         "VendorID": {
-          "label_zh": "供应商代码",
-          "description": "供应商业务代码。"
+          "business_name": "供应商代码",
+          "description": "供应商在业务系统中的代码。"
         },
         "Vendor_Name": {
-          "label_zh": "供应商名称",
-          "description": "供应商名称；与其他采购视图中的 `VendorName` 命名不同。"
+          "business_name": "供应商名称",
+          "description": "采购订单所对应的供应商名称。"
         },
         "OrderDate": {
-          "label_zh": "订单日期",
-          "description": "采购订单创建或下单日期。"
+          "business_name": "订单日期",
+          "description": "订单创建或下单的日期。"
         },
         "PartNum": {
-          "label_zh": "物料编码",
-          "description": "采购物料编码。"
+          "business_name": "物料编码",
+          "description": "记录所对应物料的 ERP 编码。"
         },
         "LineDesc": {
-          "label_zh": "物料行描述",
-          "description": "采购订单物料行描述。"
+          "business_name": "物料行描述",
+          "description": "订单行保存的物料名称或规格文本，可能不同于物料主数据描述。"
         },
         "OrderQty": {
-          "label_zh": "订单数量",
-          "description": "采购订单行的订购数量。"
+          "business_name": "订单数量",
+          "description": "订单行订购的物料数量。"
         },
         "DueDate": {
-          "label_zh": "需求日期",
-          "description": "采购订单行的需求或到期日期。"
+          "business_name": "需求日期",
+          "description": "业务记录对应的需求或到期日期。"
         },
         "ReceivedQty": {
-          "label_zh": "收货数量",
-          "description": "已收货数量。"
+          "business_name": "收货数量",
+          "description": "采购订单行累计完成的收货数量。"
         },
         "InvoiceQty": {
-          "label_zh": "开票数量",
-          "description": "该采购订单行已经取得或匹配的供应商发票数量。"
+          "business_name": "开票数量",
+          "description": "采购订单行已经取得或匹配供应商发票的数量。"
         },
         "RemainQty": {
-          "label_zh": "剩余数量",
+          "business_name": "剩余数量",
           "description": "采购订单行尚未完成的剩余数量。"
         },
         "ApproveStatus_c": {
-          "label_zh": "审批状态",
-          "description": "采购订单的审批状态。"
+          "business_name": "审批状态",
+          "description": "采购订单当前所处的审批状态。",
+          "value_examples": [
+            "Approved",
+            "Draft",
+            "Rejected"
+          ]
         }
       }
     },
@@ -508,12 +563,12 @@
       "name": "AiQueryJobV",
       "source_view": "AiQueryJobV",
       "domain": "生产",
-      "purpose": "根据项目号查询工单及要求交期",
+      "purpose": "根据项目号查询工单、工单张数及要求交期",
       "grain": "项目下每个工单一行",
       "keywords": [
         "工单输入",
-        "项目工单数量",
-        "工单数量",
+        "项目工单张数",
+        "工单张数",
         "要求交期",
         "合交期"
       ],
@@ -532,32 +587,42 @@
         "JobNum",
         "ReqDueDate"
       ],
-      "chinese_name": "项目工单视图",
-      "description": "该视图用于根据项目号查询项目下已经建立的工单及其要求交期。Excel 中生产管理部用它支持新项目工单输入，并核对项目下的工单数量和交期。每一行表示项目下的一张工单。",
+      "business_name": "项目工单视图",
+      "description": "该视图用于根据项目号查询项目下已经建立的工单及其要求交期。Excel 中生产管理部用它支持新项目工单输入，并核对项目下的工单张数和交期。每一行表示项目下的一张工单。",
       "join_columns": [
         "Company",
         "JobNum"
       ],
       "column_semantics": {
         "Company": {
-          "label_zh": "公司代码",
-          "description": "工单所属公司的代码。"
+          "business_name": "公司代码",
+          "description": "用于区分记录所属公司的业务代码。"
         },
         "CompanyName": {
-          "label_zh": "公司名称",
-          "description": "工单所属公司的名称。"
+          "business_name": "公司名称",
+          "description": "与公司代码对应的公司名称。"
         },
         "ProjectID": {
-          "label_zh": "项目号",
-          "description": "工单关联的项目号。"
+          "business_name": "项目号",
+          "description": "该工单所关联项目的业务编号。",
+          "value_examples": [
+            "24M020-B",
+            "24M148-O",
+            "25M013-D"
+          ]
         },
         "JobNum": {
-          "label_zh": "工单号",
-          "description": "工单号。"
+          "business_name": "工单号",
+          "description": "生产工单的业务编号。",
+          "value_examples": [
+            "250065-D-CC-C1",
+            "SRV0000010001",
+            "SRV0000030001"
+          ]
         },
         "ReqDueDate": {
-          "label_zh": "要求交期",
-          "description": "工单的要求完成日期或要求交期。"
+          "business_name": "要求交期",
+          "description": "工单要求完成的日期。"
         }
       }
     },
@@ -592,7 +657,7 @@
         "LaborQty",
         "JobOprCompQty"
       ],
-      "chinese_name": "工单完工进度视图",
+      "business_name": "工单完工进度视图",
       "description": "该视图用于查询工单计划数量、累计报工数量和末道工序完成数量。Excel 中机械仓库用它查询工单完工和入库前的执行进度。每一行表示一张工单的进度记录。",
       "join_columns": [
         "Company",
@@ -600,36 +665,36 @@
       ],
       "column_semantics": {
         "Company": {
-          "label_zh": "公司代码",
-          "description": "工单所属公司的代码。"
+          "business_name": "公司代码",
+          "description": "用于区分记录所属公司的业务代码。"
         },
         "CompanyName": {
-          "label_zh": "公司名称",
-          "description": "工单所属公司的名称。"
+          "business_name": "公司名称",
+          "description": "与公司代码对应的公司名称。"
         },
         "JobNum": {
-          "label_zh": "工单号",
-          "description": "工单号。"
+          "business_name": "工单号",
+          "description": "生产工单的业务编号。"
         },
         "PartNum": {
-          "label_zh": "物料编码",
-          "description": "工单生产的物料编码。"
+          "business_name": "物料编码",
+          "description": "记录所对应物料的 ERP 编码。"
         },
         "PartDescription": {
-          "label_zh": "物料描述",
-          "description": "工单生产物料的名称或规格描述。"
+          "business_name": "物料描述",
+          "description": "物料的名称、型号或规格说明。"
         },
         "JobQty": {
-          "label_zh": "工单数量",
-          "description": "工单计划生产数量。"
+          "business_name": "工单计划生产数量",
+          "description": "工单计划生产的数量。"
         },
         "LaborQty": {
-          "label_zh": "报工数量",
-          "description": "工单累计报工数量。"
+          "business_name": "报工数量",
+          "description": "工单累计完成报工的数量。"
         },
         "JobOprCompQty": {
-          "label_zh": "末道工序完成数量",
-          "description": "工单末道工序已经完成的数量。"
+          "business_name": "末道工序完成数量",
+          "description": "工单末道工序累计完成的数量。"
         }
       }
     },
@@ -663,7 +728,7 @@
         "JobQty",
         "JobOprCompQty"
       ],
-      "chinese_name": "生产追踪视图",
+      "business_name": "生产追踪视图",
       "description": "该视图用于生产管理中的工单执行追踪，提供工单、生产物料、计划数量和末道工序完成数量。Excel 中生产管理部用它管理和查询当前工单执行情况。每一行表示一张进入该追踪范围的工单；当前快照中的记录范围小于完整工单进度视图。",
       "join_columns": [
         "Company",
@@ -671,32 +736,32 @@
       ],
       "column_semantics": {
         "Company": {
-          "label_zh": "公司代码",
-          "description": "工单所属公司的代码。"
+          "business_name": "公司代码",
+          "description": "用于区分记录所属公司的业务代码。"
         },
         "CompanyName": {
-          "label_zh": "公司名称",
-          "description": "工单所属公司的名称。"
+          "business_name": "公司名称",
+          "description": "与公司代码对应的公司名称。"
         },
         "JobNum": {
-          "label_zh": "工单号",
-          "description": "工单号。"
+          "business_name": "工单号",
+          "description": "生产工单的业务编号。"
         },
         "PartNum": {
-          "label_zh": "物料编码",
-          "description": "工单生产的物料编码。"
+          "business_name": "物料编码",
+          "description": "记录所对应物料的 ERP 编码。"
         },
         "PartDescription": {
-          "label_zh": "物料描述",
-          "description": "工单生产物料的名称或规格描述。"
+          "business_name": "物料描述",
+          "description": "物料的名称、型号或规格说明。"
         },
         "JobQty": {
-          "label_zh": "工单数量",
-          "description": "工单计划生产数量。"
+          "business_name": "工单计划生产数量",
+          "description": "工单计划生产的数量。"
         },
         "JobOprCompQty": {
-          "label_zh": "末道工序完成数量",
-          "description": "工单末道工序已经完成的数量。"
+          "business_name": "末道工序完成数量",
+          "description": "工单末道工序累计完成的数量。"
         }
       }
     },
@@ -735,55 +800,70 @@
         "BalanceQty",
         "SourceName"
       ],
-      "chinese_name": "物料时间轴视图",
+      "business_name": "物料时间轴视图",
       "description": "该视图把物料在不同日期发生的收货、需求和余额变化按来源事件整理成时间轴。Excel 中生产管理部用它查询零件在一段时间内的供需变化。每一行表示某物料在某个日期和来源下的一项时间轴事件。",
       "join_columns": [
         "Company"
       ],
       "column_semantics": {
         "Company": {
-          "label_zh": "公司代码",
-          "description": "物料事件所属公司的代码。"
+          "business_name": "公司代码",
+          "description": "用于区分记录所属公司的业务代码。"
         },
         "CompanyName": {
-          "label_zh": "公司名称",
-          "description": "物料事件所属公司的名称。"
+          "business_name": "公司名称",
+          "description": "与公司代码对应的公司名称。"
         },
         "PartNum": {
-          "label_zh": "物料编码",
-          "description": "时间轴对应的物料编码。"
+          "business_name": "物料编码",
+          "description": "记录所对应物料的 ERP 编码。"
         },
         "PartDescription": {
-          "label_zh": "物料描述",
-          "description": "时间轴对应物料的名称或规格描述。"
+          "business_name": "物料描述",
+          "description": "物料的名称、型号或规格说明。"
         },
         "IUM": {
-          "label_zh": "库存计量单位",
-          "description": "物料的库存计量单位。"
+          "business_name": "库存计量单位",
+          "description": "物料在库存管理中使用的计量单位代码。",
+          "value_examples": [
+            "EA",
+            "M",
+            "KG"
+          ]
         },
         "PUM": {
-          "label_zh": "采购计量单位",
-          "description": "物料的采购计量单位。"
+          "business_name": "采购计量单位",
+          "description": "物料在采购业务中使用的计量单位代码。",
+          "value_examples": [
+            "EA",
+            "M",
+            "KG"
+          ]
         },
         "DueDate": {
-          "label_zh": "需求日期",
-          "description": "该收货或需求事件对应的日期。"
+          "business_name": "需求日期",
+          "description": "该收货或需求事件计划发生的日期。"
         },
         "ReceiptQty": {
-          "label_zh": "收货数量",
-          "description": "该事件带来的预计或实际收货数量。"
+          "business_name": "收货数量",
+          "description": "供需事件记录的预计或实际收货数量。"
         },
         "RequiredQty": {
-          "label_zh": "需求数量",
-          "description": "该事件产生的需求数量。"
+          "business_name": "需求数量",
+          "description": "供需事件产生的物料需求数量。"
         },
         "BalanceQty": {
-          "label_zh": "结余数量",
-          "description": "计算到该事件后的结余数量。"
+          "business_name": "结余数量",
+          "description": "计算到当前供需事件后的物料结余数量。"
         },
         "SourceName": {
-          "label_zh": "来源",
-          "description": "事件来源，例如采购、生产或其他供需来源。"
+          "business_name": "来源",
+          "description": "物料时间轴事件的业务来源名称。",
+          "value_examples": [
+            "现存量",
+            "检验",
+            "仓库: E2 的建议"
+          ]
         }
       }
     },
@@ -822,7 +902,7 @@
         "Dlvdate",
         "Checkdate"
       ],
-      "chinese_name": "项目概览视图",
+      "business_name": "项目概览视图",
       "description": "该视图用于查询项目的客户、机型、状态、发货日期和验收日期。Excel 中市场部通过该视图查看项目整体情况。每一行表示某公司下的一个项目。当前快照共有 848 个 `Company + ProjectID` 组合且均唯一；如果忽略公司代码，同一项目号可能在不同公司重复。",
       "join_columns": [
         "Company",
@@ -831,40 +911,49 @@
       ],
       "column_semantics": {
         "Company": {
-          "label_zh": "公司代码",
-          "description": "项目所属公司的代码。"
+          "business_name": "公司代码",
+          "description": "用于区分记录所属公司的业务代码。"
         },
         "CompanyName": {
-          "label_zh": "公司名称",
-          "description": "项目所属公司的名称。"
+          "business_name": "公司名称",
+          "description": "与公司代码对应的公司名称。"
         },
         "ProjectID": {
-          "label_zh": "项目号",
-          "description": "项目号。"
+          "business_name": "项目号",
+          "description": "项目的业务编号。"
         },
         "ProjectDesc": {
-          "label_zh": "项目描述",
-          "description": "项目名称或项目描述。"
+          "business_name": "项目描述",
+          "description": "项目名称或简要说明。"
         },
         "CustName": {
-          "label_zh": "客户名称",
-          "description": "项目客户名称。"
+          "business_name": "客户名称",
+          "description": "记录所对应的客户名称。"
         },
         "MachineType": {
-          "label_zh": "项目机型",
-          "description": "项目对应的设备机型或产品机型。"
+          "business_name": "项目机型",
+          "description": "项目对应的设备或产品机型。",
+          "value_examples": [
+            "复绕机组",
+            "盘拉机组",
+            "在线退火机组"
+          ]
         },
         "ProjectStatus": {
-          "label_zh": "项目状态",
-          "description": "项目当前状态。"
+          "business_name": "项目状态",
+          "description": "项目当前的有效状态。",
+          "value_examples": [
+            "有效",
+            "无效"
+          ]
         },
         "Dlvdate": {
-          "label_zh": "发货日期",
-          "description": "项目发货日期。"
+          "business_name": "发货日期",
+          "description": "项目记录的发货日期。"
         },
         "Checkdate": {
-          "label_zh": "验收日期",
-          "description": "项目验收日期。"
+          "business_name": "验收日期",
+          "description": "项目记录的验收日期。"
         }
       }
     },
@@ -901,7 +990,7 @@
         "JobHead_ProdQty",
         "CompleteQty"
       ],
-      "chinese_name": "项目工单追踪视图",
+      "business_name": "项目工单追踪视图",
       "description": "该视图用于查看项目下各工单生产什么物料、计划生产多少以及已经完工入库多少。Excel 中市场部用它判断项目部件是否全部完成。每一行表示项目下的一张工单。",
       "join_columns": [
         "Company",
@@ -910,40 +999,40 @@
       ],
       "column_semantics": {
         "Company": {
-          "label_zh": "公司代码",
-          "description": "项目和工单所属公司的代码。"
+          "business_name": "公司代码",
+          "description": "用于区分记录所属公司的业务代码。"
         },
         "ComName": {
-          "label_zh": "公司名称",
-          "description": "公司名称；与多数视图中的 `CompanyName` 含义相同。"
+          "business_name": "公司名称",
+          "description": "与公司代码对应的公司名称。"
         },
         "ProjectID": {
-          "label_zh": "项目号",
-          "description": "工单关联的项目号。"
+          "business_name": "项目号",
+          "description": "该项目工单所关联项目的业务编号。"
         },
         "Project_Description": {
-          "label_zh": "项目描述",
-          "description": "项目名称或项目描述；与 `ProjectDesc` 含义相同。"
+          "business_name": "项目描述",
+          "description": "项目名称或说明，对应其他视图的 ProjectDesc。"
         },
         "JobHead_JobNum": {
-          "label_zh": "工单号",
-          "description": "工单号；与其他工单视图中的 `JobNum` 含义相同。"
+          "business_name": "工单号",
+          "description": "项目工单中的生产工单编号，对应其他视图的 JobNum。"
         },
         "JobHead_PartNum": {
-          "label_zh": "工单物料编码",
-          "description": "工单生产的物料编码。"
+          "business_name": "工单物料编码",
+          "description": "项目工单所生产物料的 ERP 编码。"
         },
         "JobHead_PartDescription": {
-          "label_zh": "工单物料描述",
-          "description": "工单生产物料的名称或规格描述。"
+          "business_name": "工单物料描述",
+          "description": "项目工单生产物料的名称、型号或规格说明。"
         },
         "JobHead_ProdQty": {
-          "label_zh": "生产数量",
-          "description": "工单计划生产数量。"
+          "business_name": "生产数量",
+          "description": "项目工单计划生产的数量。"
         },
         "CompleteQty": {
-          "label_zh": "完工入库数量",
-          "description": "工单已经完工入库的数量。"
+          "business_name": "完工入库数量",
+          "description": "工单已经完工并入库的数量。"
         }
       }
     },
@@ -981,7 +1070,7 @@
         "ProjConfirmRev",
         "ProjUnJzCst"
       ],
-      "chinese_name": "项目收入成本视图",
+      "business_name": "项目收入成本视图",
       "description": "该视图用于项目财务核算，展示项目发生成本、已经结转的成本、尚未结转的成本和已经确认的收入。Excel 中财务部用它进行项目收入确认、成本结转和项目成本查询。每一行表示一个项目的财务汇总。",
       "join_columns": [
         "Company",
@@ -989,40 +1078,40 @@
       ],
       "column_semantics": {
         "Company": {
-          "label_zh": "公司代码",
-          "description": "项目所属公司的代码。"
+          "business_name": "公司代码",
+          "description": "用于区分记录所属公司的业务代码。"
         },
         "CompanyName": {
-          "label_zh": "公司名称",
-          "description": "项目所属公司的名称。"
+          "business_name": "公司名称",
+          "description": "与公司代码对应的公司名称。"
         },
         "ProjectID": {
-          "label_zh": "项目号",
-          "description": "项目号。"
+          "business_name": "项目号",
+          "description": "项目的业务编号。"
         },
         "ProjectDesc": {
-          "label_zh": "项目描述",
-          "description": "项目名称或项目描述。"
+          "business_name": "项目描述",
+          "description": "项目名称或简要说明。"
         },
         "CustDesc": {
-          "label_zh": "客户名称",
-          "description": "项目客户名称。字段名带有 `Desc`，但其业务含义是客户名称，不是项目描述。"
+          "business_name": "客户名称",
+          "description": "项目客户名称；该字段不是项目描述。"
         },
         "ProjOccurCst": {
-          "label_zh": "项目发生成本",
-          "description": "项目累计发生的成本。"
+          "business_name": "项目发生成本",
+          "description": "项目累计发生的成本金额。"
         },
         "ProjJzCst": {
-          "label_zh": "项目结转成本",
-          "description": "项目已经结转的成本。"
+          "business_name": "项目结转成本",
+          "description": "项目已经完成结转的成本金额。"
         },
         "ProjConfirmRev": {
-          "label_zh": "项目确认收入",
-          "description": "项目已经确认的收入。"
+          "business_name": "项目确认收入",
+          "description": "项目已经确认的收入金额。"
         },
         "ProjUnJzCst": {
-          "label_zh": "项目未结转成本",
-          "description": "项目尚未结转的成本。"
+          "business_name": "项目未结转成本",
+          "description": "项目尚未结转的成本金额。"
         }
       }
     },
@@ -1059,7 +1148,7 @@
         "RemainAmount",
         "BeqRemainAmount"
       ],
-      "chinese_name": "应付余额视图",
+      "business_name": "应付余额视图",
       "description": "该视图用于按供应商和币种查询应付业务金额及余额，包括原币和本币口径。Excel 中财务部用它查看应付发票及供应商未付余额。每一行表示一个供应商在一个币种下的应付汇总。",
       "join_columns": [
         "Company",
@@ -1067,44 +1156,48 @@
       ],
       "column_semantics": {
         "Company": {
-          "label_zh": "公司代码",
-          "description": "应付业务所属公司的代码。"
+          "business_name": "公司代码",
+          "description": "用于区分记录所属公司的业务代码。"
         },
         "ComName": {
-          "label_zh": "公司名称",
-          "description": "公司名称；与多数视图中的 `CompanyName` 含义相同。"
+          "business_name": "公司名称",
+          "description": "与公司代码对应的公司名称。"
         },
         "VendorID": {
-          "label_zh": "供应商代码",
-          "description": "供应商业务代码。"
+          "business_name": "供应商代码",
+          "description": "供应商在业务系统中的代码。"
         },
         "VendorNum": {
-          "label_zh": "供应商编号",
-          "description": "ERP 内部使用的供应商数字编号或内部键，不应直接当作 `VendorID`。"
+          "business_name": "供应商内部编号",
+          "description": "供应商在 ERP 内部的数字编号，不等同于供应商代码。"
         },
         "VendorName": {
-          "label_zh": "供应商名称",
-          "description": "供应商名称。"
+          "business_name": "供应商名称",
+          "description": "记录所对应的供应商名称。"
         },
         "CurrCode": {
-          "label_zh": "币种",
-          "description": "应付业务的币种代码。"
+          "business_name": "币种",
+          "description": "应付业务使用的币种代码。",
+          "value_examples": [
+            "CNY",
+            "EUR"
+          ]
         },
         "Amount": {
-          "label_zh": "原币金额",
-          "description": "原币口径的应付金额。"
+          "business_name": "原币金额",
+          "description": "应付业务按交易币种计量的金额。"
         },
         "BeqAmount": {
-          "label_zh": "本币金额",
-          "description": "折算成本币后的应付金额。"
+          "business_name": "本币金额",
+          "description": "应付金额折算为本币后的金额。"
         },
         "RemainAmount": {
-          "label_zh": "原币余额",
-          "description": "原币口径的应付余额。"
+          "business_name": "原币余额",
+          "description": "按交易币种计量的未付余额。"
         },
         "BeqRemainAmount": {
-          "label_zh": "本币余额",
-          "description": "折算成本币后的应付余额。"
+          "business_name": "本币余额",
+          "description": "未付余额折算为本币后的余额。"
         }
       }
     },
@@ -1141,7 +1234,7 @@
         "RemainAmount",
         "BeqRemainAmount"
       ],
-      "chinese_name": "应收余额视图",
+      "business_name": "应收余额视图",
       "description": "该视图用于按客户和币种查询应收业务金额及未收余额，包括原币和本币口径。Excel 中财务部用它查看应收发票和客户未收余额。每一行表示一个客户在一个币种下的应收汇总。",
       "join_columns": [
         "Company",
@@ -1149,44 +1242,49 @@
       ],
       "column_semantics": {
         "Company": {
-          "label_zh": "公司代码",
-          "description": "应收业务所属公司的代码。"
+          "business_name": "公司代码",
+          "description": "用于区分记录所属公司的业务代码。"
         },
         "ComName": {
-          "label_zh": "公司名称",
-          "description": "公司名称；与多数视图中的 `CompanyName` 含义相同。"
+          "business_name": "公司名称",
+          "description": "与公司代码对应的公司名称。"
         },
         "CustID": {
-          "label_zh": "客户代码",
-          "description": "客户业务代码。"
+          "business_name": "客户代码",
+          "description": "客户在业务系统中的代码。"
         },
         "CustNum": {
-          "label_zh": "客户编号",
-          "description": "ERP 内部使用的客户数字编号或内部键，不应直接当作 `CustID`。"
+          "business_name": "客户内部编号",
+          "description": "客户在 ERP 内部的数字编号，不等同于客户代码。"
         },
         "CustName": {
-          "label_zh": "客户名称",
-          "description": "客户名称。"
+          "business_name": "客户名称",
+          "description": "记录所对应的客户名称。"
         },
         "CueeCode": {
-          "label_zh": "币种",
-          "description": "币种代码。该字段名疑似历史拼写，但实际取值与币种字段一致。"
+          "business_name": "币种",
+          "description": "应收业务使用的币种代码。",
+          "value_examples": [
+            "CNY",
+            "USD",
+            "EUR"
+          ]
         },
         "Amount": {
-          "label_zh": "原币金额",
-          "description": "原币口径的应收金额。"
+          "business_name": "原币金额",
+          "description": "应收业务按交易币种计量的金额。"
         },
         "BeqAmount": {
-          "label_zh": "本币金额",
-          "description": "折算成本币后的应收金额。"
+          "business_name": "本币金额",
+          "description": "应收金额折算为本币后的金额。"
         },
         "RemainAmount": {
-          "label_zh": "原币余额",
-          "description": "原币口径的应收余额。"
+          "business_name": "原币余额",
+          "description": "按交易币种计量的未收余额。"
         },
         "BeqRemainAmount": {
-          "label_zh": "本币余额",
-          "description": "折算成本币后的应收余额。"
+          "business_name": "本币余额",
+          "description": "未收余额折算为本币后的余额。"
         }
       }
     },
@@ -1238,109 +1336,112 @@
         "OrderAmt",
         "TaxRegionCode"
       ],
-      "chinese_name": "销售订单视图",
+      "business_name": "销售订单视图",
       "description": "该视图用于查询销售订单的客户、物料、数量、交期、发货、退货、开票和金额。Excel 中市场部用它了解销售订单执行情况。每一行表示一条销售订单物料行。",
       "join_columns": [
         "Company"
       ],
       "column_semantics": {
         "Company": {
-          "label_zh": "公司代码",
-          "description": "销售订单所属公司的代码。"
+          "business_name": "公司代码",
+          "description": "用于区分记录所属公司的业务代码。"
         },
         "CompanyName": {
-          "label_zh": "公司名称",
-          "description": "销售订单所属公司的名称。"
+          "business_name": "公司名称",
+          "description": "与公司代码对应的公司名称。"
         },
         "OrderNum": {
-          "label_zh": "销售订单号",
-          "description": "公司内部销售订单号。"
+          "business_name": "销售订单号",
+          "description": "公司内部的销售订单编号。",
+          "value_examples": [
+            "661",
+            "90000115",
+            "417"
+          ]
         },
         "OrderDate": {
-          "label_zh": "订单日期",
-          "description": "销售订单创建或下单日期。"
+          "business_name": "订单日期",
+          "description": "订单创建或下单的日期。"
         },
         "Customer_Name": {
-          "label_zh": "客户名称",
-          "description": "客户名称。"
+          "business_name": "客户名称",
+          "description": "销售订单所对应的客户名称。"
         },
         "PONum": {
-          "label_zh": "采购订单号",
-          "description": "销售订单中记录的客户采购订单号或客户参考号；它不是公司采购模块中的内部采购订单号。"
+          "business_name": "客户采购订单号/参考号",
+          "description": "客户在销售订单中提供的采购订单号或参考号，不是内部采购订单号。",
+          "value_examples": [
+            "24229-3",
+            "HLPO2508120115",
+            "LOI-CAP-PO/IGT/24-25/0068"
+          ]
         },
         "CurrencyCode": {
-          "label_zh": "币种",
-          "description": "销售订单币种代码。"
+          "business_name": "币种",
+          "description": "销售订单使用的币种代码。",
+          "value_examples": [
+            "USD",
+            "CNY",
+            "EUR"
+          ]
         },
         "PartNum": {
-          "label_zh": "物料编码",
-          "description": "销售物料编码。"
+          "business_name": "物料编码",
+          "description": "记录所对应物料的 ERP 编码。"
         },
         "LineDesc": {
-          "label_zh": "物料行描述",
-          "description": "销售订单物料行描述。"
+          "business_name": "物料行描述",
+          "description": "订单行保存的物料名称或规格文本，可能不同于物料主数据描述。"
         },
         "OrderQty": {
-          "label_zh": "订单数量",
-          "description": "销售订单行的订购数量。"
+          "business_name": "订单数量",
+          "description": "订单行订购的物料数量。"
         },
         "NeedByDate": {
-          "label_zh": "需求日期",
-          "description": "客户需求日期或销售订单要求交付日期。"
+          "business_name": "需求日期",
+          "description": "客户要求的交付日期。"
         },
         "ShipQty": {
-          "label_zh": "发货数量",
-          "description": "已发货数量。"
+          "business_name": "发货数量",
+          "description": "销售订单行已经发货的数量。"
         },
         "ReturnQty": {
-          "label_zh": "退货数量",
-          "description": "已退货数量。"
+          "business_name": "退货数量",
+          "description": "销售订单行已经退回的数量。"
         },
         "InvoiceQty": {
-          "label_zh": "开票数量",
+          "business_name": "开票数量",
           "description": "销售订单行已经开具销售发票的数量。"
         },
         "RedQty": {
-          "label_zh": "红票数量",
-          "description": "红字发票或冲销对应的数量。"
+          "business_name": "红票数量",
+          "description": "红字发票或冲销业务对应的数量。"
         },
         "DocLineAmount": {
-          "label_zh": "原币行金额",
-          "description": "订单行的原币金额。"
+          "business_name": "原币行金额",
+          "description": "销售订单行按交易币种计量的金额。"
         },
         "LineAmount": {
-          "label_zh": "本币行金额",
-          "description": "订单行折算后的本币金额。"
+          "business_name": "本币行金额",
+          "description": "销售订单行折算为本币后的金额。"
         },
         "DocOrderAmt": {
-          "label_zh": "原币订单金额",
-          "description": "整张销售订单的原币金额。"
+          "business_name": "原币订单金额",
+          "description": "整张销售订单按交易币种计量的金额。"
         },
         "OrderAmt": {
-          "label_zh": "本币订单金额",
-          "description": "整张销售订单折算后的本币金额。"
+          "business_name": "本币订单金额",
+          "description": "整张销售订单折算为本币后的金额。"
         },
         "TaxRegionCode": {
-          "label_zh": "税区代码",
-          "description": "销售订单适用的税区代码。"
+          "business_name": "税区代码",
+          "description": "销售订单适用的税区代码。",
+          "value_examples": [
+            "OT13",
+            "OT0"
+          ]
         }
       }
-    }
-  ],
-  "database_snapshot": {
-    "file_name": "data_agent_2026_07_15.sqlite",
-    "content_fingerprint": "6b46d66158225ce4e759011afd2d9c46626c298760f2d80d9a1692d54cdc8b12",
-    "schema_fingerprint": "4a3eb36e073a0c12f63fabbfb29ad3ed7f3201e31a9b6b61e9479b598f6028c6",
-    "snapshot_started_at": "2026-07-15T12:44:41+08:00",
-    "profile_generated_at": "2026-08-05T15:45:49+08:00"
-  },
-  "generated_profile": "database_profile.json",
-  "generated_limitations": [
-    {
-      "code": "all_null",
-      "view": "AiQueryPoPriceV",
-      "column": "AvgPrice",
-      "message": "AiQueryPoPriceV.AvgPrice 在当前快照中全部为空，不做推测。"
     }
   ],
   "semantic_source": {

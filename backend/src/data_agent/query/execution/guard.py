@@ -9,7 +9,7 @@ from sqlglot import exp, parse
 from sqlglot.errors import OptimizeError, ParseError
 from sqlglot.optimizer.qualify import qualify
 
-from data_agent.knowledge.catalog import KnowledgeCatalog
+from data_agent.knowledge.semantic_catalog import SemanticCatalog
 from data_agent.database import Database
 
 
@@ -29,7 +29,11 @@ class ValidatedSQL:
 
 
 class SQLGuard:
-    """确定性守卫：模型可以写查询，但不能决定安全策略和可访问范围。"""
+    """确定性守卫：模型可以写查询，但不能决定安全策略和可访问范围。
+
+    全链路应复用同一实例：Agent 规划/repair 与 Executor 执行前强制校验共用，
+    禁止在各调用点各自 new 导致 max_rows/白名单语义漂移。
+    """
 
     FORBIDDEN_FUNCTIONS = {
         "load_extension",
@@ -41,7 +45,7 @@ class SQLGuard:
 
     def __init__(
         self,
-        catalog: KnowledgeCatalog,
+        catalog: SemanticCatalog,
         database_profile: dict[str, Any],
         max_rows: int = 500,
         source: Database | None = None,
@@ -74,11 +78,6 @@ class SQLGuard:
         self._column_lookup = {
             table: {column.casefold(): column for column in columns}
             for table, columns in self.allowed_schema.items()
-        }
-        self.blocked_views = {
-            str(item.get("view"))
-            for item in database_profile.get("compatibility", {}).get("invalid_views", [])
-            if isinstance(item, dict) and item.get("view")
         }
         self.relationships = tuple(
             relationship
@@ -113,8 +112,6 @@ class SQLGuard:
             canonical = self._table_lookup.get(table.name.casefold())
             if canonical is None:
                 raise SQLValidationError("查询使用了语义层未开放的数据对象。")
-            if canonical in self.blocked_views:
-                raise SQLValidationError("查询使用的数据对象正在等待知识审核。")
             if canonical not in names:
                 names.append(canonical)
         if not names:

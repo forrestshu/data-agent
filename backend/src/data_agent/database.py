@@ -30,14 +30,6 @@ class Database:
     def dialect(self) -> str:
         return "sqlite"
 
-    @property
-    def database_path(self) -> Path:
-        return self.path
-
-    @property
-    def database_name(self) -> str:
-        return self.path.name
-
     @contextmanager
     def connect(self, *, timeout_seconds: int | None = None) -> Generator[sqlite3.Connection, None, None]:
         if not self.path.exists():
@@ -75,10 +67,3 @@ class Database:
     @staticmethod
     def fetchall_dicts(cursor: sqlite3.Cursor) -> tuple[dict[str, Any], ...]:
         return tuple(Database.row_dict(cursor, row) for row in cursor.fetchall())
-
-    @staticmethod
-    def quote_identifier(identifier: str) -> str:
-        return f'"{identifier.replace(chr(34), chr(34) * 2)}"'
-
-    def physical_view(self, logical_name: str) -> str:
-        return self.quote_identifier(logical_name)

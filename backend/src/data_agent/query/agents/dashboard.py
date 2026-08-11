@@ -2,29 +2,25 @@
 
 from __future__ import annotations
 
-import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from pydantic import Field, ValidationError, field_validator
+from pydantic import Field, field_validator
 
-from .support import (
-    effective_question,
-    localize_result_columns as localize_query_result,
-)
-from data_agent.knowledge.catalog import KnowledgeCatalog
+from data_agent.knowledge.semantic_catalog import SemanticCatalog
 from data_agent.database import Database
-from data_agent.query.execution.executor import QueryResult
 from data_agent.llm import LLMClient, LLMUnavailable
-from data_agent.knowledge.prompt import build_prompt_knowledge, load_prompt
-from .planning import PlanningAnalysis, repair_plan
+from data_agent.knowledge.prompt import build_semantic_context, load_prompt
+from .planning import (
+    PlanningAnalysis,
+    RepairFn,
+    effective_question,
+    parse_planning_payload,
+    plan_with_ai,
+)
 from data_agent.query.contracts import RouteDecision
 from data_agent.query.execution.guard import SQLGuard, SQLValidationError
-
-
-logger = logging.getLogger(__name__)
-
 
 class DashboardAnalysis(PlanningAnalysis):
     """Dashboard 模型输出：描述概况口径、验证 SQL 和可视化偏好。"""
@@ -37,7 +33,7 @@ class DashboardAnalysis(PlanningAnalysis):
 
     @field_validator("dimension_columns", "metric_columns", mode="before")
     @classmethod
-    def normalize_string_list(cls, value: Any) -> list[str]:
+    def normalize_dashboard_string_list(cls, value: Any) -> list[str]:
         """协议容错：把 null、单字符串或异常对象归一化为字符串数组。"""
 
         if value is None:
@@ -116,23 +112,31 @@ class DashboardAgent:
 
     def __init__(
         self,
-        catalog: KnowledgeCatalog,
+        catalog: SemanticCatalog,
         llm_client: LLMClient | None,
         database_profile: dict[str, Any] | None = None,
         source: Database | None = None,
+        sql_guard: SQLGuard | None = None,
     ) -> None:
-        """装配概况 Agent；安全目录和数据库画像约束 SQLite 查询。"""
+        """装配概况 Agent；安全目录和数据库画像约束 SQLite 查询。
+
+        sql_guard 应与执行器共用同一实例；未注入时仅便于单测自行构造。
+        """
 
         self.catalog = catalog
         self.llm_client = llm_client
         self.database_profile = database_profile or {}
         self.source = source
-        self.sql_guard = SQLGuard(catalog, self.database_profile, source=source)
+        self.sql_guard = sql_guard or SQLGuard(
+            catalog,
+            self.database_profile,
+            source=source,
+        )
 
     def _knowledge_context(self) -> str:
         """提示构建：只传递已审核语义的紧凑投影，不把完整治理资产重复发送。"""
 
-        return build_prompt_knowledge(self.catalog)
+        return build_semantic_context(self.catalog)
 
     def _system_prompt(self) -> str:
         """Dashboard 专用提示：允许概况推断，但要求所有数字经过数据库验证。"""
@@ -143,19 +147,10 @@ class DashboardAgent:
     def _parse_analysis(payload: dict[str, Any]) -> DashboardAnalysis:
         """协议解析：保留完整概况字段；失败时只保留可修复的核心字段。"""
 
-        try:
-            return DashboardAnalysis.model_validate(payload)
-        except ValidationError as full_error:
-            status = str(payload.get("status", "")).casefold().strip()
-            aliases = {
-                "success": "ready",
-                "completed": "ready",
-                "clarify": "clarification_required",
-                "clarification": "clarification_required",
-                "not_supported": "unsupported",
-            }
-            normalized_status = aliases.get(status, status)
-            common = {
+        return parse_planning_payload(
+            DashboardAnalysis,
+            payload,
+            common_keys={
                 "status",
                 "confidence",
                 "title",
@@ -164,48 +159,21 @@ class DashboardAgent:
                 "matched_concepts",
                 "source_views",
                 "assumptions",
-            }
-            if normalized_status == "ready":
-                allowed = common | {
-                    "sql",
-                    "parameters",
-                    "display_units",
-                    "visualization",
-                    "dimension_columns",
-                    "metric_columns",
-                }
-            elif normalized_status == "clarification_required":
-                allowed = common | {
-                    "clarification_question",
-                    "clarification_kind",
-                    "clarification_options",
-                    "clarification_unit",
-                }
-            else:
-                allowed = common
-            minimal = {key: value for key, value in payload.items() if key in allowed}
-            try:
-                return DashboardAnalysis.model_validate(minimal)
-            except ValidationError:
-                raise full_error
-
-    def _repair_analysis(
-        self,
-        effective_question: str,
-        payload: dict[str, Any],
-        issue: str,
-    ) -> DashboardAnalysis:
-        """一次修复：把契约或 SQL Guard 反馈给 Dashboard 模型，不放宽安全边界。"""
-        return repair_plan(
-            self.llm_client,
-            system_prompt=self._system_prompt(),
-            question=effective_question,
-            payload=payload,
-            issue=issue,
-            parser=self._parse_analysis,
-            error_factory=DashboardPlanningError,
-            label="Dashboard",
-            max_tokens=2400,
+            },
+            ready_keys={
+                "sql",
+                "parameters",
+                "display_units",
+                "visualization",
+                "dimension_columns",
+                "metric_columns",
+            },
+            clarification_keys={
+                "clarification_question",
+                "clarification_kind",
+                "clarification_options",
+                "clarification_unit",
+            },
         )
 
     def _validate_ready(
@@ -229,60 +197,36 @@ class DashboardAgent:
         analysis.source_views = list(validated.source_views)
         return analysis
 
-    def _analyze_with_ai(self, effective_question: str, limit: int) -> DashboardAnalysis:
-        """模型入口：生成概况计划，契约或 SQL 不通过时自动修复一次。"""
-
-        if self.llm_client is None:
-            raise LLMUnavailable("DeepSeek 未配置。")
-        payload = self.llm_client.complete_json(
-            self._system_prompt(),
-            effective_question,
-            max_tokens=2400,
-        )
-        try:
-            analysis = self._parse_analysis(payload)
-        except ValidationError as error:
-            logger.warning("Dashboard 契约第一次校验失败，尝试自动修复：%s", error)
-            analysis = self._repair_analysis(
-                effective_question,
-                payload,
-                "INVALID_DASHBOARD_JSON_CONTRACT",
-            )
+    @staticmethod
+    def _refine_analysis(analysis: DashboardAnalysis, repair: RepairFn) -> DashboardAnalysis:
+        """Dashboard 专用 refine：业务可查时不把 unsupported 当真终态。"""
 
         if analysis.status == "unsupported":
-            analysis = self._repair_analysis(
-                effective_question,
+            return repair(
                 analysis.model_dump(),
                 "UNSUPPORTED_WITH_AVAILABLE_SEMANTICS",
             )
-
-        if analysis.status == "ready":
-            # 初次生成后最多再给模型两次守卫反馈。业务可查询时，不能把可修复的 SQL
-            # 计划错误伪装成“不支持该指标”。所有修复结果仍需通过同一 SQLGuard。
-            for repair_index in range(2):
-                try:
-                    return self._validate_ready(analysis, limit)
-                except SQLValidationError as error:
-                    logger.warning(
-                        "Dashboard SQL 第 %s 次未通过守卫，尝试自动修复：%s",
-                        repair_index + 1,
-                        error,
-                    )
-                    analysis = self._repair_analysis(
-                        effective_question,
-                        analysis.model_dump(),
-                        str(error),
-                    )
-                    if analysis.status != "ready":
-                        return analysis
-            try:
-                return self._validate_ready(analysis, limit)
-            except SQLValidationError as final_error:
-                raise DashboardPlanningError(
-                    "Dashboard 连续三次未生成可安全执行的概况查询。"
-                ) from final_error
         return analysis
 
+    def _analyze_with_ai(self, question: str, limit: int) -> DashboardAnalysis:
+        """模型入口：走共享规划骨架，概况差异由 refine 与修复次数保留。"""
+
+        def validate_ready(analysis: DashboardAnalysis) -> DashboardAnalysis:
+            return self._validate_ready(analysis, limit)
+
+        return plan_with_ai(
+            llm_client=self.llm_client,
+            system_prompt=self._system_prompt(),
+            question=question,
+            parser=self._parse_analysis,
+            validate_ready=validate_ready,
+            error_factory=DashboardPlanningError,
+            label="Dashboard",
+            max_tokens=2400,
+            max_sql_repairs=2,
+            contract_issue="INVALID_DASHBOARD_JSON_CONTRACT",
+            refine=self._refine_analysis,
+        )
     @staticmethod
     def _known_business_ambiguity(question: str) -> DashboardAnalysis | None:
         """在调用模型前拦截已知的跨业务对象歧义，避免模型猜测或误报不支持。"""
@@ -404,14 +348,3 @@ class DashboardAgent:
                 route_reason=analysis.route_reason,
             ),
         )
-
-    def localize_result_columns(
-        self,
-        original_question: str,
-        result: QueryResult,
-    ) -> QueryResult:
-        """展示层：为 Dashboard SQL 生成的未知英文别名补充中文表头，不改变数据值。"""
-
-        if self.llm_client is None:
-            raise LLMUnavailable("DeepSeek 未配置，无法翻译 Dashboard 字段。")
-        return localize_query_result(self.llm_client, original_question, result)

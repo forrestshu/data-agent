@@ -63,7 +63,6 @@ export interface DashboardSpec {
   question: string | null
   summary: string
   layout_reason: string
-  generated_at: string
   widgets: DashboardWidget[]
 }
 
@@ -159,4 +158,3 @@ export interface AIStatus {
   required: boolean
   role: string
 }
-

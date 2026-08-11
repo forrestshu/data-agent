@@ -10,9 +10,8 @@ from typing import Any, Generator, Iterator
 
 from sqlglot import exp, parse_one
 
-from data_agent.knowledge.catalog import KnowledgeCatalog
+from data_agent.knowledge.semantic_catalog import SemanticCatalog
 from data_agent.database import Database
-from .localization import column_label
 from data_agent.query.contracts import RouteDecision
 from .guard import SQLGuard, SQLValidationError
 
@@ -44,23 +43,32 @@ class QueryResult:
     has_more: bool
 
 
-class ReadOnlyQueryService:
-    """生成 SQL 的唯一数据库执行 Interface，并支持完整结果流式导出。"""
+class ReadOnlyQueryExecutor:
+    """生成 SQL 的唯一数据库执行 Interface，并支持完整结果流式导出。
+
+    执行与导出前强制走注入的 SQLGuard；不在方法内另行构造守卫，避免策略漂移。
+    """
 
     def __init__(
         self,
         source: Database,
-        catalog: KnowledgeCatalog,
+        catalog: SemanticCatalog,
         database_profile: dict[str, Any] | None = None,
         max_execution_seconds: float = 3.0,
         max_export_seconds: float = 30.0,
+        guard: SQLGuard | None = None,
     ) -> None:
         self.source = source
-        self.database_path = self.source.database_path
         self.catalog = catalog
         self.database_profile = database_profile or {}
         self.max_execution_seconds = max_execution_seconds
         self.max_export_seconds = max_export_seconds
+        self.guard = guard or SQLGuard(
+            catalog,
+            self.database_profile,
+            max_rows=500,
+            source=source,
+        )
 
     def _connect(self, *, export: bool = False) -> Any:
         timeout = self.source.export_timeout_seconds if export else self.source.query_timeout_seconds
@@ -81,14 +89,14 @@ class ReadOnlyQueryService:
                 continue
             semantics.update(
                 {
-                    name: detail["label_zh"]
+                    name: detail["business_name"]
                     for name, detail in view.column_semantics.items()
-                    if detail.get("label_zh")
+                    if detail.get("business_name")
                 }
             )
-        return {name: semantics.get(name, column_label(name)) for name in rows[0]}
+        return {name: semantics.get(name, name) for name in rows[0]}
 
-    def _validate_result(
+    def _build_result_notices(
         self,
         plan: QueryPlan,
         rows: tuple[dict[str, Any], ...],
@@ -164,7 +172,7 @@ class ReadOnlyQueryService:
             tree.set(argument, None)
         return tree.limit(1).sql(dialect=self.source.dialect)
 
-    def _execute_generated_query(
+    def _execute_query(
         self,
         connection: Any,
         validated: Any,
@@ -200,7 +208,7 @@ class ReadOnlyQueryService:
         finally:
             connection.set_progress_handler(None, 0)
 
-    def ask_generated_sql(
+    def execute_generated_sql(
         self,
         question: str,
         sql: str,
@@ -208,24 +216,26 @@ class ReadOnlyQueryService:
         route_decision: RouteDecision,
         limit: int = 500,
     ) -> QueryResult:
-        guard = SQLGuard(
-            self.catalog,
-            self.database_profile,
-            max_rows=500,
-            source=self.source,
-        )
         contains_variant = self._contains_match_variant(sql, tuple(parameters))
         fallback_sql, fallback_parameters = contains_variant or (sql, tuple(parameters))
-        validated = guard.validate(fallback_sql, fallback_parameters, requested_limit=limit)
+        # 执行前强制校验：含模糊/精确变体在内，凡碰库的 SQL 都必须过同一 Guard。
+        validated = self.guard.validate(
+            fallback_sql,
+            fallback_parameters,
+            requested_limit=limit,
+        )
         deadline = time.monotonic() + self.max_execution_seconds
         selected = validated
         with self._connect() as connection:
             exact_variant = self._exact_match_variant(fallback_sql, fallback_parameters)
             if exact_variant is None:
-                total_count, rows = self._execute_generated_query(connection, validated, deadline)
+                total_count, rows = self._execute_query(connection, validated, deadline)
             else:
-                exact_validated = guard.validate(*exact_variant, requested_limit=limit)
-                exact_total, exact_rows = self._execute_generated_query(
+                exact_validated = self.guard.validate(
+                    *exact_variant,
+                    requested_limit=limit,
+                )
+                exact_total, exact_rows = self._execute_query(
                     connection,
                     exact_validated,
                     deadline,
@@ -249,7 +259,7 @@ class ReadOnlyQueryService:
                     selected = exact_validated
                     total_count, rows = exact_total, exact_rows
                 else:
-                    total_count, rows = self._execute_generated_query(
+                    total_count, rows = self._execute_query(
                         connection,
                         validated,
                         deadline,
@@ -267,7 +277,7 @@ class ReadOnlyQueryService:
             plan=plan,
             rows=rows,
             column_labels=self._column_labels(plan, rows),
-            notices=self._validate_result(plan, rows),
+            notices=self._build_result_notices(plan, rows),
             total_count=total_count,
             has_more=total_count > len(rows),
         )
@@ -278,13 +288,7 @@ class ReadOnlyQueryService:
         sql: str,
         parameters: tuple[Any, ...],
     ) -> Generator[tuple[tuple[str, ...], Iterator[tuple[Any, ...]]], None, None]:
-        guard = SQLGuard(
-            self.catalog,
-            self.database_profile,
-            max_rows=500,
-            source=self.source,
-        )
-        validated = guard.validate(
+        validated = self.guard.validate(
             sql,
             parameters,
             requested_limit=500,

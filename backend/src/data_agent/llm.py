@@ -90,7 +90,7 @@ class DeepSeekClient:
             payload["response_format"] = {"type": "json_object"}
         try:
             # DeepSeek 是国内直连服务：该专用客户端不继承系统的海外代理环境变量，
-            # 避免本地代理未启动或线路异常时阻断 ERP 查询；其他程序的代理配置不受影响。
+            # 避免本地代理未启动或线路异常时阻断查询；其他程序的代理配置不受影响。
             with httpx.Client(
                 timeout=self.config.timeout_seconds,
                 trust_env=False,

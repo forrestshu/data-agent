@@ -8,7 +8,7 @@ from numbers import Real
 import re
 from typing import Any
 
-from data_agent.knowledge.catalog import KnowledgeCatalog
+from data_agent.knowledge.semantic_catalog import SemanticCatalog
 from .execution.executor import QueryResult
 
 
@@ -92,7 +92,7 @@ def _widget(
 
 def build_initial_dashboard(
     profile: dict[str, Any],
-    catalog: KnowledgeCatalog,
+    catalog: SemanticCatalog,
 ) -> DashboardPayload:
     """构建无需额外业务查询的初始概览，所有数字均来自当前知识画像。"""
 
@@ -130,14 +130,12 @@ def build_initial_dashboard(
         )
     ]
 
-    generated_at = str(profile.get("generated_at") or "")
     return {
         "mode": "initial",
         "title": "业务数据概览",
         "question": None,
         "summary": "先从当前数据源的整体覆盖开始；提出问题后，图表会围绕你的核心关注点重新排布。",
         "layout_reason": "初始布局按数据覆盖面与业务领域组织。",
-        "generated_at": generated_at,
         "widgets": [
             _widget(
                 "dataset-volume",
@@ -546,6 +544,5 @@ def build_query_dashboard(
             f"概况展示模式为 {visualization_hint}；核心结果占据最大面积，"
             "其他面板按其对当前概况的贡献度递减。"
         ),
-        "generated_at": "",
         "widgets": widgets,
     }

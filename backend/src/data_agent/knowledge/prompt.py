@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .catalog import KnowledgeCatalog
+from .semantic_catalog import SemanticCatalog
 
 
 PROMPT_ROOT = Path(__file__).resolve().parents[1] / "prompts"
@@ -19,16 +19,9 @@ def load_prompt(name: str, **values: str) -> str:
     return template
 
 
-def build_prompt_knowledge(catalog: KnowledgeCatalog) -> str:
+def build_semantic_context(catalog: SemanticCatalog) -> str:
     """保留全部已审核视图、字段和可执行关联，同时限制提示词体积。"""
 
-    label_overrides = {
-        ("AiQueryBomV", "PartNum"): "上级部件编码",
-        ("AiQueryBomV", "PartDescription"): "上级部件描述",
-        ("AiQueryPayablesV", "VendorNum"): "供应商内部编号",
-        ("AiQueryReceivablesV", "CustNum"): "客户内部编号",
-        ("AiQuerySoOverViewV", "PONum"): "客户采购订单号/参考号",
-    }
     view_lines: list[str] = []
     for view in catalog.views:
         approved_columns = dict.fromkeys(
@@ -38,13 +31,17 @@ def build_prompt_knowledge(catalog: KnowledgeCatalog) -> str:
         for name in approved_columns:
             if name == "Company":
                 continue
-            label = label_overrides.get(
-                (view.name, name),
-                view.column_semantics.get(name, {}).get("label_zh", name),
+            semantic = view.column_semantics[name]
+            business_name = semantic["business_name"]
+            description = str(semantic["description"]).removesuffix("。")
+            examples = "、".join(semantic["value_examples"])
+            example_text = f"；例：{examples}" if examples else ""
+            columns.append(
+                f"{name}={business_name}（{description}{example_text}）"
             )
-            columns.append(f"{name}={label}")
         view_lines.append(
-            f"{view.name}|{view.purpose}|{view.grain}|" + ",".join(columns)
+            f"{view.name}|{view.business_name}|{view.purpose}|{view.grain}|"
+            + ",".join(columns)
         )
 
     relationships = []

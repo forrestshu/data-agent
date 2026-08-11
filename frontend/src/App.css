@@ -4,7 +4,9 @@
   --accent-text: #1e40af;
   --on-primary: #ffffff;
   --primary-soft: #e8edf8;
-  --sidebar-active-background: #1b3674;
+  --sidebar-background: #1a3975;
+  --sidebar-border: #294a86;
+  --sidebar-active-background: #274d91;
   --answer-emphasis: #2858c7;
   --text: #1b1d21;
   --muted: #5f646c;
@@ -48,6 +50,9 @@
   --accent-text: #91adff;
   --on-primary: #ffffff;
   --primary-soft: #283552;
+  --sidebar-background: #112451;
+  --sidebar-border: #1c3267;
+  --sidebar-active-background: #1b3674;
   --answer-emphasis: #9bb4ff;
   --text: #f1f2f4;
   --muted: #b7bac2;
@@ -138,8 +143,8 @@
   height: 100dvh;
   overflow: hidden;
   color: #e8eeff;
-  border-right: 1px solid #1c3267;
-  background: #112451;
+  border-right: 1px solid var(--sidebar-border);
+  background: var(--sidebar-background);
 }
 
 .sidebar-brand {
@@ -174,8 +179,31 @@
   cursor: pointer;
 }
 
+.collapse-button {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(4px);
+  transition: opacity 180ms ease, transform 180ms ease, background 160ms ease;
+}
+
+.app-sidebar:hover .collapse-button,
+.collapse-button:focus-visible,
+.is-collapsed .collapse-button {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
 .collapse-button:hover {
   background: rgba(255, 255, 255, 0.1);
+}
+
+@media (hover: none), (pointer: coarse) {
+  .collapse-button {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+  }
 }
 
 .sidebar-nav {
@@ -638,7 +666,7 @@
     position: relative;
     display: block;
     min-height: 86px;
-    padding-top: 26px;
+    padding-top: 20.333px;
     transition:
       min-height var(--composer-expand-duration) var(--composer-enter-easing),
       padding-top var(--composer-expand-duration) var(--composer-enter-easing),
@@ -651,9 +679,9 @@
 
   .dashboard-page.has-query-dashboard .dashboard-heading-with-composer > .dashboard-composer {
     position: absolute;
-    top: 17px;
+    top: 11.333px;
     right: 0;
-    width: 420px;
+    width: 210px;
     min-width: 0;
     max-width: 100%;
     padding-bottom: 0;
@@ -677,6 +705,7 @@
   }
 
   .dashboard-page.has-query-dashboard.is-composer-compact .dashboard-heading-with-composer {
+    margin-bottom: 21.333px;
     transition-duration:
       var(--composer-collapse-duration),
       var(--composer-collapse-duration),
@@ -898,7 +927,7 @@
 .dashboard-page.is-composer-compact .dashboard-heading {
   flex: 0 0 auto;
   min-height: 60px;
-  margin-bottom: 10px;
+  margin-bottom: 18px;
 }
 
 .dashboard-heading > div {

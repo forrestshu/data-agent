@@ -6,7 +6,7 @@ import uvicorn
 
 
 def main() -> None:
-    """启动 FastAPI，并默认启用开发环境热更新。"""
+    """启动本地 FastAPI 服务器。"""
 
     uvicorn.run("data_agent.api:app", host="127.0.0.1", port=8000)
 

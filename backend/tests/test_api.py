@@ -425,6 +425,51 @@ class ApiTests(unittest.TestCase):
         self.assertEqual("件", payload["dashboard"]["widgets"][0]["unit"])
         self.assertNotIn("result", payload)
 
+    def test_repeated_dashboard_query_normalizes_real_model_contract_variants(self) -> None:
+        """同一 Dashboard 问题重复提交时，常见状态别名和单字符串假设都应稳定执行。"""
+
+        question = "查询采购单 2040760 的订购数量、已收数量、在检数量和净收货数量"
+        fake = FakeLLMClient(
+            {
+                "status": "supported",
+                "confidence": 0.96,
+                "title": "采购单2040760收货进度",
+                "summary": "按采购订单物料行展示订购、收货、在检和净收货数量。",
+                "route_reason": "采购到货进度视图包含所需采购订单指标",
+                "matched_concepts": ["采购单", "订购数量", "收货进度"],
+                "source_views": ["AiQueryPoProgressV"],
+                "sql": (
+                    "SELECT PONum, OrderQty, ReceivedQty, InspectionQty, NetReceivedQty "
+                    "FROM AiQueryPoProgressV WHERE PONum = ?"
+                ),
+                "parameters": [
+                    {"name": "PONum", "type": "int", "value": 2040760}
+                ],
+                "visualization": "table",
+                "dimension_columns": ["PONum"],
+                "metric_columns": [
+                    "OrderQty",
+                    "ReceivedQty",
+                    "InspectionQty",
+                    "NetReceivedQty",
+                ],
+                "display_units": {},
+                "assumptions": "采购单号按字符串参数匹配，并保留采购订单物料行粒度。",
+            }
+        )
+        with TestClient(create_test_app(llm_client=fake)) as client:
+            responses = [
+                client.post("/api/dashboard/query", json={"question": question})
+                for _ in range(2)
+            ]
+
+        for response in responses:
+            payload = response.json()
+            self.assertEqual(200, response.status_code)
+            self.assertEqual("completed", payload["status"])
+            self.assertEqual("采购单2040760收货进度", payload["dashboard"]["title"])
+            self.assertEqual("AiQueryPoProgressV", payload["evidence"]["source_views"][0])
+
     def test_dashboard_broad_order_count_requests_business_type(self) -> None:
         """“订单”同时可能指销售或采购时必须追问，不能误报数据库不支持。"""
 
