@@ -17,7 +17,7 @@ from data_agent.database import Database
 from data_agent.knowledge.database_profile import load_database_profile
 from data_agent.knowledge.prompt import build_semantic_context
 from data_agent.query.contracts import RouteDecision
-from data_agent.settings import DATABASE_PROFILE_PATH
+from data_agent.settings import DATABASE_PROFILE_PATH, DEFAULT_DATABASE_PATH
 from data_agent.query.execution.guard import SQLGuard, SQLValidationError
 
 
@@ -353,7 +353,7 @@ class TextToSQLTests(unittest.TestCase):
         cls.profile = load_database_profile(DATABASE_PROFILE_PATH)
         cls.guard = SQLGuard(cls.catalog, cls.profile)
         cls.executor = ReadOnlyQueryExecutor(
-            Database.from_environment(),
+            Database(path=DEFAULT_DATABASE_PATH),
             cls.catalog,
             database_profile=cls.profile,
             guard=cls.guard,

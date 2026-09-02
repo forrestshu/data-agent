@@ -4,12 +4,9 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-import os
 from pathlib import Path
 import sqlite3
 from typing import Any, Generator, Iterable
-
-from data_agent.settings import DEFAULT_DATABASE_PATH
 
 
 @dataclass(frozen=True)
@@ -19,12 +16,6 @@ class Database:
     path: Path
     query_timeout_seconds: int = 10
     export_timeout_seconds: int = 30
-
-    @classmethod
-    def from_environment(cls) -> "Database":
-        configured = os.getenv("DATA_AGENT_DATABASE")
-        path = Path(configured).expanduser().resolve() if configured else DEFAULT_DATABASE_PATH
-        return cls(path=path)
 
     @property
     def dialect(self) -> str:

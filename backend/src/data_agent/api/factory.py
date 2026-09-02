@@ -11,7 +11,7 @@ from data_agent.database import Database
 from data_agent.knowledge.database_profile import load_database_profile
 from data_agent.llm import DeepSeekClient, LLMClient
 from data_agent.query.execution.exports import QueryExportRegistry
-from data_agent.settings import DATABASE_PROFILE_PATH, FRONTEND_DIST_PATH
+from data_agent.settings import DATABASE_PROFILE_PATH, DEFAULT_DATABASE_PATH, FRONTEND_DIST_PATH
 
 
 def create_app(
@@ -28,7 +28,7 @@ def create_app(
         version="0.3.0",
         description="DeepSeek 语义理解、自然语言回答与 SQLite 只读查询",
     )
-    app.state.database = Database.from_environment()
+    app.state.database = Database(path=DEFAULT_DATABASE_PATH)
     app.state.profile = load_database_profile(DATABASE_PROFILE_PATH)
     app.state.llm = configured_llm
     app.state.query_exports = QueryExportRegistry()
