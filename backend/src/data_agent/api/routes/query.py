@@ -12,8 +12,13 @@ from data_agent.api.errors import QUERY_FAILURE_MESSAGES, failure_response
 from data_agent.api.schemas import QueryRequest
 from data_agent.knowledge.database_profile import DatabaseProfileError
 from data_agent.llm import LLMClient, LLMUnavailable
-from data_agent.query.agents.data_query import AgentClarificationRequired
+from data_agent.query.agents.data_query import (
+    AgentClarificationRequired,
+    AgentUnsupportedQuery,
+    SQLGenerationError,
+)
 from data_agent.query.contracts import RouteConfirmationRequired
+from data_agent.query.execution.guard import SQLValidationError
 from data_agent.query.workflow import QueryWorkflow
 
 
@@ -87,6 +92,12 @@ def query_data(payload: QueryRequest, request: Request) -> JSONResponse:
         )
     except DatabaseProfileError as error:
         return fail(error, "knowledge_unavailable", retryable=False)
+    except AgentUnsupportedQuery as error:
+        return fail(error, "unsupported_query", retryable=False)
+    except SQLGenerationError as error:
+        return fail(error, "internal_error", retryable=True)
+    except SQLValidationError as error:
+        return fail(error, "internal_error", retryable=True)
     except (KeyError, ValueError) as error:
         return fail(error, "unsupported_query", retryable=False)
     except Exception as error:

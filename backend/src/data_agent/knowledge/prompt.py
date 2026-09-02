@@ -30,6 +30,7 @@ def build_semantic_context(catalog: SemanticCatalog) -> str:
         columns = []
         for name in approved_columns:
             if name == "Company":
+                columns.append("Company=公司代码")
                 continue
             semantic = view.column_semantics[name]
             business_name = semantic["business_name"]
@@ -53,7 +54,9 @@ def build_semantic_context(catalog: SemanticCatalog) -> str:
             for left, right in relationship.keys
         )
         risk = "!" if relationship.status == "approved_with_risk" else ""
+        guidance = relationship.grain_warning.removesuffix("。")
         relationships.append(
             f"{relationship.left_view}+{relationship.right_view}({keys}){risk}"
+            f"[{relationship.cardinality}；{guidance}]"
         )
     return "\n".join(view_lines) + "\nJOIN:" + ";".join(relationships)

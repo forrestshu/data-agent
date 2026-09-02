@@ -88,6 +88,8 @@ class DeepSeekClient:
         }
         if json_output:
             payload["response_format"] = {"type": "json_object"}
+            # 查询规划需要可复现；自然语言回答仍保留模型默认采样行为。
+            payload["temperature"] = 0
         try:
             # DeepSeek 是国内直连服务：该专用客户端不继承系统的海外代理环境变量，
             # 避免本地代理未启动或线路异常时阻断查询；其他程序的代理配置不受影响。

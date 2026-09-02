@@ -33,6 +33,7 @@
         "PartDescription"
       ],
       "output_columns": [
+        "Company",
         "CompanyName",
         "PartNum",
         "PartDescription"
@@ -94,6 +95,7 @@
         "PartDescription"
       ],
       "output_columns": [
+        "Company",
         "CompanyName",
         "PartNum",
         "PartDescription",
@@ -173,6 +175,7 @@
         "MtlPartDescription"
       ],
       "output_columns": [
+        "Company",
         "CompanyName",
         "Plant",
         "PartNum",
@@ -249,6 +252,7 @@
         "LineDesc"
       ],
       "output_columns": [
+        "Company",
         "CompanyName",
         "PartNum",
         "LineDesc",
@@ -359,6 +363,7 @@
         "VendorName"
       ],
       "output_columns": [
+        "Company",
         "CompanyName",
         "PONum",
         "VendorID",
@@ -468,6 +473,7 @@
         "Vendor_Name"
       ],
       "output_columns": [
+        "Company",
         "CompanyName",
         "PONum",
         "VendorID",
@@ -582,6 +588,7 @@
         "JobNum"
       ],
       "output_columns": [
+        "Company",
         "CompanyName",
         "ProjectID",
         "JobNum",
@@ -649,6 +656,7 @@
         "PartDescription"
       ],
       "output_columns": [
+        "Company",
         "CompanyName",
         "JobNum",
         "PartNum",
@@ -721,6 +729,7 @@
         "PartDescription"
       ],
       "output_columns": [
+        "Company",
         "CompanyName",
         "JobNum",
         "PartNum",
@@ -789,6 +798,7 @@
         "PartDescription"
       ],
       "output_columns": [
+        "Company",
         "CompanyName",
         "PartNum",
         "PartDescription",
@@ -893,6 +903,7 @@
         "CustName"
       ],
       "output_columns": [
+        "Company",
         "CompanyName",
         "ProjectID",
         "ProjectDesc",
@@ -953,7 +964,7 @@
         },
         "Checkdate": {
           "business_name": "验收日期",
-          "description": "项目记录的验收日期。"
+          "description": "项目记录的验收日期；非空表示项目已验收，为空表示尚未验收。"
         }
       }
     },
@@ -981,6 +992,7 @@
         "JobHead_PartDescription"
       ],
       "output_columns": [
+        "Company",
         "ComName",
         "ProjectID",
         "Project_Description",
@@ -1061,6 +1073,7 @@
         "CustDesc"
       ],
       "output_columns": [
+        "Company",
         "CompanyName",
         "ProjectID",
         "ProjectDesc",
@@ -1138,6 +1151,7 @@
         "VendorName"
       ],
       "output_columns": [
+        "Company",
         "ComName",
         "VendorID",
         "VendorNum",
@@ -1224,6 +1238,7 @@
         "CustName"
       ],
       "output_columns": [
+        "Company",
         "ComName",
         "CustID",
         "CustNum",
@@ -1316,6 +1331,7 @@
         "LineDesc"
       ],
       "output_columns": [
+        "Company",
         "CompanyName",
         "OrderNum",
         "OrderDate",
@@ -1626,6 +1642,116 @@
       "description": "项目工单中的工单号与工单基础视图的工单号属于同一业务字段。",
       "coverage_evidence": "项目工单中的 8,902 个去重工单号全部包含在工单基础视图中。",
       "grain_warning": "连接时必须保留公司代码，不能只使用工单号。"
+    },
+    {
+      "id": "job_to_project",
+      "topic": "工单与项目",
+      "left_view": "AiQueryJobV",
+      "right_view": "AiQueryProjectV",
+      "keys": [
+        {
+          "left": "Company",
+          "right": "Company"
+        },
+        {
+          "left": "ProjectID",
+          "right": "ProjectID"
+        }
+      ],
+      "cardinality": "many_to_one",
+      "status": "approved",
+      "required_all_keys": true,
+      "description": "按公司代码和项目号连接工单与项目主数据。",
+      "coverage_evidence": "当前快照中项目视图的 Company + ProjectID 848/848 唯一；工单视图 8,934 条非空项目号中 8,911 条按原值匹配。",
+      "grain_warning": "部分历史工单项目号存在大小写差异或未匹配；连接不会放大工单行，但 INNER JOIN 会排除未匹配记录。"
+    },
+    {
+      "id": "job_tracking_to_job",
+      "topic": "生产追踪与工单",
+      "left_view": "AiQueryJobTrackingV",
+      "right_view": "AiQueryJobV",
+      "keys": [
+        {
+          "left": "Company",
+          "right": "Company"
+        },
+        {
+          "left": "JobNum",
+          "right": "JobNum"
+        }
+      ],
+      "cardinality": "one_to_one",
+      "status": "approved",
+      "required_all_keys": true,
+      "description": "按公司代码和工单号直接连接生产追踪与工单基础信息。",
+      "coverage_evidence": "当前快照中生产追踪 320 条 Company + JobNum 全部匹配工单视图，且两侧目标键唯一。",
+      "grain_warning": "生产追踪只覆盖工单全集的子集；从工单侧 INNER JOIN 会缩小范围。"
+    },
+    {
+      "id": "sales_order_to_part",
+      "topic": "销售订单与物料主数据",
+      "left_view": "AiQuerySoOverViewV",
+      "right_view": "AiQueryPartV",
+      "keys": [
+        {
+          "left": "Company",
+          "right": "Company"
+        },
+        {
+          "left": "PartNum",
+          "right": "PartNum"
+        }
+      ],
+      "cardinality": "many_to_one",
+      "status": "approved",
+      "required_all_keys": true,
+      "description": "按公司代码和物料编码连接销售订单行与物料主数据。",
+      "coverage_evidence": "当前快照中销售订单 4,385 行有 4,384 行匹配物料主数据；物料侧 Company + PartNum 83,597/83,597 唯一。",
+      "grain_warning": "LEFT JOIN 可保留未匹配的一条销售订单行；不得省略 Company 只按物料编码连接。"
+    },
+    {
+      "id": "job_progress_to_part",
+      "topic": "工单生产物料与物料主数据",
+      "left_view": "AiQueryJobProgressV",
+      "right_view": "AiQueryPartV",
+      "keys": [
+        {
+          "left": "Company",
+          "right": "Company"
+        },
+        {
+          "left": "PartNum",
+          "right": "PartNum"
+        }
+      ],
+      "cardinality": "many_to_zero_or_one",
+      "status": "approved",
+      "required_all_keys": true,
+      "description": "按公司代码和物料编码连接工单进度中的生产物料与物料主数据。",
+      "coverage_evidence": "当前快照中物料主数据 Company + PartNum 83597/83597 唯一；工单进度 29476 条非空物料中 25441 条匹配。",
+      "grain_warning": "物料主数据不会放大工单进度行；存在未匹配物料，需保留工单时使用 LEFT JOIN。"
+    },
+    {
+      "id": "sales_order_to_receivables",
+      "topic": "销售订单客户与应收余额",
+      "left_view": "AiQuerySoOverViewV",
+      "right_view": "AiQueryReceivablesV",
+      "keys": [
+        {
+          "left": "Company",
+          "right": "Company"
+        },
+        {
+          "left": "Customer_Name",
+          "right": "CustName"
+        }
+      ],
+      "cardinality": "many_to_many_possible",
+      "status": "approved_with_risk",
+      "required_all_keys": true,
+      "description": "当前只有公司代码和客户名称可连接销售订单与应收余额；仅适合查询明细，不得直接汇总金额。",
+      "coverage_evidence": "当前快照中销售订单 4385 行有 3478 行按 Company + 客户名称匹配；应收侧 143 行中有 142 个去重名称键，1 个名称键对应 2 行。",
+      "grain_warning": "客户名称不是稳定主键，且应收可能按币种多行；必须使用 Company，明细应去重，禁止在直接 JOIN 后汇总。"
     },
     {
       "id": "po_progress_to_overview",

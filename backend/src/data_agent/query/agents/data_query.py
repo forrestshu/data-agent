@@ -7,7 +7,7 @@ import logging
 import re
 from dataclasses import dataclass
 from difflib import SequenceMatcher
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 from sqlglot import exp, parse_one
@@ -68,6 +68,15 @@ class IntentAnalysis(PlanningAnalysis):
     intent_summary: str = "执行数据查询"
     filter_constraints: list[QueryConstraint] = Field(default_factory=list)
     requested_fields: list[str] = Field(default_factory=list)
+    result_shape: Literal[
+        "detail",
+        "scalar_aggregate",
+        "grouped_aggregate",
+        "ranking",
+    ] = "detail"
+    required_operations: list[str] = Field(default_factory=list)
+    grouping_fields: list[str] = Field(default_factory=list)
+    entity_keys: list[str] = Field(default_factory=list)
     missing_information: list[str] = Field(default_factory=list)
 
     @field_validator("filter_constraints", mode="before")
@@ -109,6 +118,9 @@ class IntentAnalysis(PlanningAnalysis):
 
     @field_validator(
         "requested_fields",
+        "required_operations",
+        "grouping_fields",
+        "entity_keys",
         "missing_information",
         mode="before",
     )
@@ -167,6 +179,10 @@ class SQLGenerationError(ValueError):
     """生成边界异常：模型连续两次不能产生可安全执行的语义层约束 SQL。"""
 
 
+class AgentUnsupportedQuery(SQLGenerationError):
+    """能力边界：现有语义层确实缺少回答问题所需的字段或安全关系。"""
+
+
 class DataQueryAgent:
     """查询 Agent：模型负责理解和写 SQL，语义层与 AST 守卫负责事实和安全。"""
 
@@ -218,8 +234,23 @@ class DataQueryAgent:
                 "route_reason",
                 "matched_concepts",
                 "assumptions",
+                "filter_constraints",
+                "requested_fields",
+                "result_shape",
+                "required_operations",
+                "grouping_fields",
+                "entity_keys",
+                "source_views",
             },
-            ready_keys={"sql", "parameters", "display_units"},
+            ready_keys={
+                "sql",
+                "parameters",
+                "display_units",
+                "result_shape",
+                "required_operations",
+                "grouping_fields",
+                "entity_keys",
+            },
             clarification_keys={
                 "clarification_question",
                 "clarification_kind",
@@ -249,11 +280,13 @@ class DataQueryAgent:
             # 是否限量属于用户语义，不能信任模型自报；只根据原问题中的明确表达判断。
             preserve_query_limit=self._question_requests_limit(effective_question),
         )
-        self._validate_result_shape(effective_question, validated.base_sql)
-        # 编排层向执行器传递完整安全 SQL；500 行预览只应在执行器最后一跳添加一次。
-        analysis.sql = validated.base_sql
-        analysis.parameters = list(validated.parameters)
+        # 后续业务形态校验只信任 Guard 从 AST 提取的真实视图，不信任模型自报。
         analysis.source_views = list(validated.source_views)
+        base_sql = self._apply_explicit_top_n(effective_question, validated.base_sql)
+        self._validate_result_shape(analysis, effective_question, base_sql)
+        # 编排层向执行器传递完整安全 SQL；500 行预览只应在执行器最后一跳添加一次。
+        analysis.sql = base_sql
+        analysis.parameters = list(validated.parameters)
         return analysis
 
     @staticmethod
@@ -267,6 +300,7 @@ class DataQueryAgent:
             r"分别",
             r"按.{1,20}(?:统计|汇总|分组|合计)",
             r"哪些.{0,20}(?:多少|数量|金额|库存)",
+            r"(?:前|top)\s*[一二三四五六七八九十百千\d]+\s*(?:个|名|条)",
         )
         return any(re.search(pattern, normalized) for pattern in patterns)
 
@@ -277,45 +311,262 @@ class DataQueryAgent:
         if cls._question_requests_grouped_result(question):
             return False
         normalized = question.casefold()
+        mixed_output_patterns = (
+            r"(?:描述|编码|编号|名称|日期|客户|供应商|工单号|项目号)"
+            r".{0,20}(?:以及|和|及|与).{0,20}(?:总量|合计|多少|数量|金额)",
+            r"(?:总量|合计|多少|数量|金额)"
+            r".{0,20}(?:以及|和|及|与).{0,20}"
+            r"(?:描述|编码|编号|名称|日期|客户|供应商|工单号|项目号)",
+        )
+        if any(re.search(pattern, normalized) for pattern in mixed_output_patterns):
+            return False
+        if "所有工单" in normalized and "率" in normalized:
+            return False
         patterns = (
             r"(?:还有|现有|当前|剩余)?多少(?:库存|数量|金额|余额)",
             r"多少\s*(?:个|种|条|家)?\s*(?:物料|订单|供应商|客户)",
             r"(?:总库存|库存总量|库存合计|总金额|金额合计|数量合计|总数量)",
             r"(?:合计|总计|一共|共计).{0,12}(?:多少|是多少)?",
+            r"项目状态.{0,20}项目数量",
+            r"(?:完工|完成|入库|达成)率",
         )
         return any(re.search(pattern, normalized) for pattern in patterns)
 
-    def _validate_result_shape(self, effective_question: str, sql: str) -> None:
-        """粒度守卫：单值汇总只能输出聚合值，不能被普通字段或顶层分组拆成多行。"""
+    @staticmethod
+    def _top_level_select(tree: exp.Expression) -> exp.Select | None:
+        """返回最终结果的 SELECT，避免把 CTE 内部形态当成最终答案。"""
 
-        explicitly_grouped = self._question_requests_grouped_result(effective_question)
-        expects_scalar = not explicitly_grouped and self._question_requests_scalar_aggregate(
-            effective_question
+        if isinstance(tree, exp.Select):
+            return tree
+        return tree.find(exp.Select)
+
+    @staticmethod
+    def _question_top_n(question: str) -> int | None:
+        """从问题中取出明确的 Top N；未明确数量时不臆测。"""
+
+        normalized = question.casefold()
+        match = re.search(r"(?:前|top\s*)(\d+)\s*(?:个|名|条|种)?", normalized)
+        if match:
+            return int(match.group(1))
+        chinese_numbers = {
+            "一": 1,
+            "二": 2,
+            "三": 3,
+            "四": 4,
+            "五": 5,
+            "六": 6,
+            "七": 7,
+            "八": 8,
+            "九": 9,
+            "十": 10,
+        }
+        match = re.search(r"前\s*([一二三四五六七八九十])\s*(?:个|名|条|种)", normalized)
+        return chinese_numbers.get(match.group(1)) if match else None
+
+    def _apply_explicit_top_n(self, effective_question: str, sql: str) -> str:
+        """用原问题中明确的 N 确定性约束已排序查询，不让模型反复遗漏 LIMIT。"""
+
+        top_n = self._question_top_n(effective_question)
+        if top_n is None:
+            return sql
+        tree = parse_one(sql, read=self.sql_guard.dialect)
+        select = self._top_level_select(tree)
+        if select is None:
+            return sql
+        if select.args.get("order") is None:
+            raise SQLValidationError("Top N 或排名查询必须先使用 ORDER BY 指定排名依据。")
+        select.set("limit", exp.Limit(expression=exp.Literal.number(top_n)))
+        return tree.sql(dialect=self.sql_guard.dialect)
+
+    @staticmethod
+    def _projection_field_names(select: exp.Select) -> set[str]:
+        """返回最终 SELECT 实际输出或用于计算输出的字段名。"""
+
+        names: set[str] = set()
+        for projection in select.expressions:
+            if projection.alias:
+                names.add(projection.alias.casefold())
+            names.update(column.name.casefold() for column in projection.find_all(exp.Column))
+        return names
+
+    @staticmethod
+    def _operation_presence(tree: exp.Expression, select: exp.Select) -> dict[str, bool]:
+        """把 SQL AST 投影为查询意图契约使用的通用操作集合。"""
+
+        has_distinct_count = any(
+            isinstance(count.this, exp.Distinct)
+            for count in tree.find_all(exp.Count)
         )
-        if not expects_scalar:
-            return
+        return {
+            "aggregate": tree.find(exp.AggFunc) is not None,
+            "distinct": any(node.args.get("distinct") is not None for node in tree.find_all(exp.Select)),
+            "distinct_count": has_distinct_count,
+            "group_by": tree.find(exp.Group) is not None,
+            "order_by": tree.find(exp.Order) is not None,
+            "limit": select.args.get("limit") is not None,
+            "ratio": tree.find(exp.Div) is not None,
+            "window": tree.find(exp.Window) is not None,
+            "join": tree.find(exp.Join) is not None,
+        }
+
+    def _validate_declared_contract(
+        self,
+        analysis: IntentAnalysis,
+        effective_question: str,
+        tree: exp.Expression,
+        select: exp.Select,
+    ) -> None:
+        """核对模型声明的输出、粒度和关键操作，避免 SQL 漏落实意图。"""
+
+        output_names = self._projection_field_names(select)
+        required_outputs = set(analysis.requested_fields)
+        normalized_question = effective_question.casefold()
+        source_views = set(analysis.source_views)
+        if "原币" in normalized_question or "本币" in normalized_question:
+            if "AiQueryPayablesV" in source_views:
+                required_outputs.update({"VendorName", "CurrCode"})
+            if "AiQueryReceivablesV" in source_views:
+                required_outputs.update({"CustName", "CueeCode"})
+        missing_outputs = sorted(
+            field
+            for field in required_outputs
+            if field.casefold() not in output_names
+        )
+        if missing_outputs:
+            raise SQLValidationError(
+                "SELECT 遗漏 requested_fields 中的必需输出字段："
+                + "、".join(missing_outputs)
+            )
+
+        operations = self._operation_presence(tree, select)
+        unknown_operations = sorted(
+            operation
+            for operation in analysis.required_operations
+            if operation not in operations
+        )
+        if unknown_operations:
+            raise SQLValidationError(
+                "required_operations 只能使用 aggregate、distinct、distinct_count、"
+                "group_by、order_by、limit、ratio、window、join："
+                + "、".join(unknown_operations)
+            )
+        missing_operations = sorted(
+            operation
+            for operation in analysis.required_operations
+            if not operations[operation]
+        )
+        if missing_operations:
+            raise SQLValidationError(
+                "SQL 没有落实 required_operations：" + "、".join(missing_operations)
+            )
+
+        if any(operation in {"distinct", "distinct_count"} for operation in analysis.required_operations):
+            if not analysis.entity_keys:
+                raise SQLValidationError(
+                    "声明了 DISTINCT 操作时必须同时填写 entity_keys，明确去重或统计的业务对象。"
+                )
+
+        group_names = {
+            column.name.casefold()
+            for group in tree.find_all(exp.Group)
+            for column in group.find_all(exp.Column)
+        }
+        group_names.update(
+            column.name.casefold()
+            for window in tree.find_all(exp.Window)
+            for partition in window.args.get("partition_by") or []
+            for column in partition.find_all(exp.Column)
+        )
+        missing_groups = sorted(
+            field
+            for field in analysis.grouping_fields
+            if field.casefold() not in group_names
+        )
+        if missing_groups:
+            raise SQLValidationError(
+                "GROUP BY 遗漏 grouping_fields：" + "、".join(missing_groups)
+            )
+
+        if analysis.result_shape == "scalar_aggregate":
+            if select.args.get("group") is not None or not operations["aggregate"]:
+                raise SQLValidationError(
+                    "result_shape=scalar_aggregate 必须返回无顶层 GROUP BY 的单值聚合。"
+                )
+        elif analysis.result_shape == "grouped_aggregate":
+            if not operations["aggregate"] or not operations["group_by"]:
+                raise SQLValidationError(
+                    "result_shape=grouped_aggregate 必须同时包含聚合和 GROUP BY。"
+                )
+        elif analysis.result_shape == "ranking":
+            if not operations["order_by"] or not (operations["limit"] or operations["window"]):
+                raise SQLValidationError(
+                    "result_shape=ranking 必须包含排序，并使用 LIMIT 或窗口函数完成排名。"
+                )
+
+    def _validate_result_shape(
+        self,
+        analysis: IntentAnalysis,
+        effective_question: str,
+        sql: str,
+    ) -> None:
+        """结果形态守卫：核对声明契约及原问题中的确定性语义。"""
 
         tree = parse_one(sql, read=self.sql_guard.dialect)
-        if not isinstance(tree, exp.Select):
+        select = self._top_level_select(tree)
+        if select is None:
             return
-        if tree.args.get("group") is not None:
+
+        self._validate_declared_contract(analysis, effective_question, tree, select)
+
+        explicitly_grouped = self._question_requests_grouped_result(effective_question)
+        expects_scalar = (
+            not explicitly_grouped
+            and self._question_requests_scalar_aggregate(effective_question)
+        )
+        if expects_scalar and select.args.get("group") is not None:
             raise SQLValidationError(
                 "用户要求单个总数或合计值；顶层 GROUP BY 会把答案拆成多行，请移除分组。"
             )
 
-        for projection in tree.expressions:
-            expression = projection.this if isinstance(projection, exp.Alias) else projection
-            has_aggregate = isinstance(expression, exp.AggFunc) or expression.find(exp.AggFunc) is not None
-            if not has_aggregate:
-                raise SQLValidationError(
-                    "用户要求单个总数或合计值；SELECT 只能保留回答所需的聚合表达式，"
-                    "不能附加物料编码、描述等普通字段。"
-                )
-            for column in expression.find_all(exp.Column):
-                if column.find_ancestor(exp.AggFunc) is None:
+        if expects_scalar:
+            for projection in select.expressions:
+                expression = projection.this if isinstance(projection, exp.Alias) else projection
+                has_aggregate = isinstance(expression, exp.AggFunc) or expression.find(exp.AggFunc) is not None
+                if not has_aggregate:
                     raise SQLValidationError(
-                        "用户要求单个总数或合计值；聚合表达式外不能混入普通字段。"
+                        "用户要求单个总数或合计值；SELECT 只能保留回答所需的聚合表达式，"
+                        "不能附加物料编码、描述等普通字段。"
                     )
+                for column in expression.find_all(exp.Column):
+                    if column.find_ancestor(exp.AggFunc) is None:
+                        raise SQLValidationError(
+                            "用户要求单个总数或合计值；聚合表达式外不能混入普通字段。"
+                        )
+
+        if "率" in effective_question and tree.find(exp.Div) is None:
+            raise SQLValidationError(
+                "用户要求比率；SQL 必须计算分子/分母，不能只返回两个原始数量字段。"
+            )
+
+        if "分布" in effective_question and (
+            tree.find(exp.AggFunc) is None or tree.find(exp.Group) is None
+        ):
+            raise SQLValidationError("分布查询必须包含聚合和 GROUP BY。")
+
+        top_n = self._question_top_n(effective_question)
+        if top_n is not None:
+            if select.args.get("order") is None:
+                raise SQLValidationError("Top N 或排名查询必须先使用 ORDER BY 指定排名依据。")
+            limit = select.args.get("limit")
+            if limit is None:
+                raise SQLValidationError("Top N 或排名查询必须使用 LIMIT 截取所需数量。")
+            limit_expression = limit.args.get("expression")
+            if top_n is not None and (
+                not isinstance(limit_expression, exp.Literal)
+                or not limit_expression.is_number
+                or int(limit_expression.this) != top_n
+            ):
+                raise SQLValidationError(f"问题要求前 {top_n} 条，LIMIT 必须等于 {top_n}。")
 
     @staticmethod
     def _question_requests_limit(question: str) -> bool:
@@ -345,7 +596,12 @@ class DataQueryAgent:
                 return True
         return False
 
-    def _single_view_covering_analysis(self, analysis: IntentAnalysis) -> str | None:
+    def _single_view_covering_analysis(
+        self,
+        analysis: IntentAnalysis,
+        *,
+        require_filter: bool = True,
+    ) -> str | None:
         """语义守卫：若一个视图已覆盖全部筛选与输出字段，就证明模型不应因 JOIN 或字段关系而追问。"""
 
         filter_columns = {
@@ -355,7 +611,7 @@ class DataQueryAgent:
             item.casefold() for item in analysis.requested_fields if item
         }
         # 没有结构化筛选或输出信息时，后端不能臆测用户意图，继续保留模型的真实澄清。
-        if not filter_columns or not requested_columns:
+        if not requested_columns or (require_filter and not filter_columns):
             return None
         candidate_names = set(analysis.source_views)
         for view in self.catalog.views:
@@ -415,13 +671,41 @@ class DataQueryAgent:
             )
         return None
 
+    def _unsupported_issue(self, analysis: IntentAnalysis) -> str | None:
+        """能力守卫：单视图已经覆盖问题时，模型不得误报语义层不支持。"""
+
+        if analysis.status != "unsupported":
+            return None
+        if not analysis.requested_fields:
+            return (
+                "unsupported 必须列出当前语义层缺少的 requested_fields 作为能力证据；"
+                "不得只返回状态或笼统理由。若字段实际存在，应生成 SQL。"
+            )
+        covering_view = self._single_view_covering_analysis(
+            analysis,
+            require_filter=False,
+        )
+        if covering_view is None:
+            return None
+        return (
+            f"单个视图 {covering_view} 已同时覆盖全部筛选字段和输出字段；"
+            "当前语义层能够回答，不得返回 unsupported，应生成单视图 SQL。"
+        )
+
     def _refine_analysis(
         self,
         analysis: IntentAnalysis,
         repair: RepairFn,
         previous_clarifications: tuple[str, ...],
     ) -> IntentAnalysis:
-        """查询专用 refine：拦截重复追问与无效澄清，再进入共享 SQL 校验循环。"""
+        """查询专用 refine：复核误报不支持、重复追问和无效澄清。"""
+
+        unsupported_issue = self._unsupported_issue(analysis)
+        if unsupported_issue is not None:
+            logger.warning("模型误报语义层不支持，尝试自动修复：%s", unsupported_issue)
+            analysis = repair(analysis.model_dump(), unsupported_issue)
+            if analysis.status == "unsupported":
+                raise SQLGenerationError("模型连续两次误报当前语义层不支持该查询。")
 
         if analysis.status == "clarification_required" and self._repeats_clarification(
             analysis.clarification_question,
@@ -467,7 +751,9 @@ class DataQueryAgent:
             error_factory=SQLGenerationError,
             label="Text-to-SQL",
             max_tokens=2200,
-            max_sql_repairs=1,
+            # ERP100 实测已证明：第一次 Guard 反馈后模型仍可能保留同一语义错误。
+            # 第二次仍走同一验证 Seam，不放宽安全规则。
+            max_sql_repairs=2,
             contract_issue="INVALID_JSON_CONTRACT",
             refine=refine,
         )
@@ -501,7 +787,7 @@ class DataQueryAgent:
                 model=self.llm_client.model,
             )
         if analysis.status == "unsupported":
-            raise SQLGenerationError(analysis.route_reason)
+            raise AgentUnsupportedQuery(analysis.route_reason)
         assert analysis.sql is not None
         assert analysis.source_views
 

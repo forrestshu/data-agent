@@ -133,7 +133,7 @@ class TechnicalFailureAnswerLLMClient(BrokenIntentLLMClient):
 
 
 class DashboardGuardRepairLLMClient:
-    """前两次重复输出非法 Company 字段，第三次按守卫反馈生成可执行 SQL。"""
+    """前两次重复输出 SELECT 星号，第三次按守卫反馈生成可执行 SQL。"""
 
     provider = "deepseek"
     model = "deepseek-v4-flash"
@@ -158,10 +158,7 @@ class DashboardGuardRepairLLMClient:
                 "summary": "按销售订单号去重统计订单数量。",
                 "route_reason": "销售订单视图包含销售订单号",
                 "source_views": ["AiQuerySoOverViewV"],
-                "sql": (
-                    "SELECT Company, COUNT(DISTINCT OrderNum) AS OrderCount "
-                    "FROM AiQuerySoOverViewV GROUP BY Company"
-                ),
+                "sql": "SELECT * FROM AiQuerySoOverViewV",
                 "parameters": [],
                 "visualization": "metric",
                 "dimension_columns": [],
@@ -490,7 +487,7 @@ class ApiTests(unittest.TestCase):
         )
 
     def test_dashboard_retries_guard_rejected_sql_until_queryable(self) -> None:
-        """明确口径可查时，模型重复误用 Company 也应继续安全修复并展示结果。"""
+        """明确口径可查时，模型重复使用星号也应继续安全修复并展示结果。"""
 
         fake = DashboardGuardRepairLLMClient()
         with TestClient(create_test_app(llm_client=fake)) as client:
@@ -847,10 +844,34 @@ class AIApiTests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(200, response.status_code)
         self.assertEqual("query_failed", payload["status"])
+        self.assertTrue(payload["retryable"])
         self.assertTrue(payload["answer_generated_by_ai"])
         self.assertNotIn("JSON", payload["answer"])
         self.assertNotIn("DeepSeek", payload["answer"])
         self.assertNotIn("AiQuery", payload["answer"])
+
+    def test_true_unsupported_query_is_nonretryable(self) -> None:
+        """语义层确实缺字段时保留公共失败外壳，并标记为不可重试。"""
+
+        fake = FakeLLMClient(
+            {
+                "status": "unsupported",
+                "route_reason": "语义层没有员工身份证号字段",
+                "source_views": [],
+                "filter_constraints": [],
+                "requested_fields": ["EmployeeIdCard"],
+            }
+        )
+        with TestClient(create_test_app(llm_client=fake)) as client:
+            response = client.post(
+                "/api/query",
+                json={"question": "查询员工身份证号"},
+            )
+
+        payload = response.json()
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("query_failed", payload["status"])
+        self.assertFalse(payload["retryable"])
 
     def test_technical_failure_answer_is_replaced_by_safe_copy(self) -> None:
         """即使错误说明模型输出技术词，后端也必须替换为固定安全文案。"""

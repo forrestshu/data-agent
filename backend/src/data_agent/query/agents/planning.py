@@ -281,6 +281,10 @@ def plan_with_ai(
                 error,
             )
             analysis = repair(analysis.model_dump(), str(error))
+            if refine is not None:
+                analysis = refine(analysis, repair)
             if analysis.status != "ready":
-                return analysis
+                raise error_factory(
+                    f"{label} 的 SQL 修复没有返回可继续校验的 ready 计划。"
+                )
     return analysis

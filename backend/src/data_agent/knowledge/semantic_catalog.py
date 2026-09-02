@@ -68,6 +68,8 @@ class SemanticRelationship:
     right_view: str
     keys: tuple[tuple[str, str], ...]
     status: str
+    cardinality: str
+    grain_warning: str
 
     @property
     def executable(self) -> bool:
@@ -85,6 +87,8 @@ class SemanticRelationship:
                 if isinstance(item, dict) and item.get("left") and item.get("right")
             ),
             status=str(data.get("status", "advisory_not_enforceable")),
+            cardinality=str(data.get("cardinality", "unknown")),
+            grain_warning=str(data.get("grain_warning", "")),
         )
 
 
