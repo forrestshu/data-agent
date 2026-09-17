@@ -3,6 +3,8 @@ import type {
   ClarificationTurn,
   DashboardQueryResponse,
   DashboardSpec,
+  DataSourceId,
+  DataSourceStatus,
   QueryResponse,
 } from './types'
 
@@ -81,4 +83,16 @@ export async function getAIStatus(): Promise<AIStatus> {
 /** Dashboard 初始态：使用当前知识画像生成无需额外业务查询的基础图表。 */
 export async function getDashboard(): Promise<DashboardSpec> {
   return readJson<DashboardSpec>(await fetch(`${API_ROOT}/dashboard`))
+}
+
+export async function getDataSource(): Promise<DataSourceStatus> {
+  return readJson<DataSourceStatus>(await fetch(`${API_ROOT}/source`))
+}
+
+export async function selectDataSource(sourceId: DataSourceId): Promise<DataSourceStatus> {
+  return readJson<DataSourceStatus>(await fetch(`${API_ROOT}/source`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source_id: sourceId }),
+  }))
 }

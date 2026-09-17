@@ -24,7 +24,9 @@ import {
   askQuestion,
   getAIStatus,
   getDashboard,
+  getDataSource,
   getQueryExportUrl,
+  selectDataSource,
 } from './api'
 import type {
   AIStatus,
@@ -32,6 +34,8 @@ import type {
   ClarificationAnalysis,
   DashboardSpec,
   DashboardWidget,
+  DataSourceId,
+  DataSourceStatus,
   QueryResult,
   RouteDecision,
 } from './types'
@@ -1181,6 +1185,8 @@ function App() {
   const [dashboardClarificationHistory, setDashboardClarificationHistory] =
     useState<ClarificationTurn[]>([])
   const [aiStatus, setAIStatus] = useState<AIStatus | null>(null)
+  const [dataSource, setDataSource] = useState<DataSourceStatus | null>(null)
+  const [sourceChanging, setSourceChanging] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -1202,17 +1208,39 @@ function App() {
   /** 初始化数据流：读取 AI 状态和静态 Dashboard。 */
   useEffect(() => {
     let active = true
-    Promise.all([getAIStatus(), getDashboard()])
-      .then(([nextAI, nextDashboard]) => {
+    Promise.all([getAIStatus(), getDashboard(), getDataSource()])
+      .then(([nextAI, nextDashboard, nextSource]) => {
         if (!active) return
         setAIStatus(nextAI)
         setDashboard(nextDashboard)
+        setDataSource(nextSource)
       })
       .catch((loadError: unknown) => {
         if (active) setError(loadError instanceof Error ? loadError.message : '初始化失败')
       })
     return () => { active = false }
   }, [])
+
+  async function changeDataSource(sourceId: DataSourceId): Promise<void> {
+    if (sourceId === dataSource?.active_source_id || sourceChanging) return
+    setSourceChanging(true)
+    setError(null)
+    try {
+      const nextSource = await selectDataSource(sourceId)
+      const nextDashboard = await getDashboard()
+      setDataSource(nextSource)
+      setDashboard(nextDashboard)
+      setResult(null)
+      setAnswer('')
+      setConfirmation(null)
+      setClarification(null)
+      setDashboardNotice(null)
+    } catch (sourceError) {
+      setError(sourceError instanceof Error ? sourceError.message : '数据源切换失败')
+    } finally {
+      setSourceChanging(false)
+    }
+  }
 
   /** 查询状态机：保留原问题，支持 AI 追问、低置信度确认和最终结果。 */
   async function executeQuery(options: {
@@ -1399,14 +1427,14 @@ function App() {
         <div
           className="sidebar-foot"
           role="status"
-          aria-label={`${aiStatus?.configured ? 'AI 服务正常' : 'AI 服务未配置'}，模型 ${aiStatus?.model ?? 'deepseek-v4-flash'}，SQLite 本地数据库`}
+          aria-label={`${aiStatus?.configured ? 'AI 服务正常' : 'AI 服务未配置'}，模型 ${aiStatus?.model ?? 'deepseek-v4-flash'}，${dataSource?.sources.find((source) => source.active)?.label ?? 'SQL Server 实时库'}`}
           title={aiStatus?.configured ? 'AI 服务正常' : 'AI 服务未配置'}
         >
           <span className={aiStatus?.configured ? 'service-dot is-online' : 'service-dot'} aria-hidden="true" />
           <span className="service-copy">
             <span className="service-model">{aiStatus?.model ?? 'deepseek-v4-flash'}</span>
             <span className="service-dataset">
-              SQLite 本地数据库
+              {dataSource?.sources.find((source) => source.active)?.label ?? 'SQL Server 实时库'}
             </span>
           </span>
         </div>
@@ -1415,6 +1443,21 @@ function App() {
       <div className="content-shell">
         <header className="app-topbar">
           <h1><PageIcon size={20} aria-hidden="true" />{pageMeta.title}</h1>
+          <label className="source-switcher">
+            <span>数据源</span>
+            <select
+              value={dataSource?.active_source_id ?? 'sqlserver'}
+              disabled={!dataSource || sourceChanging || loading || dashboardLoading}
+              onChange={(event) => void changeDataSource(event.target.value as DataSourceId)}
+            >
+              {(dataSource?.sources ?? [
+                { id: 'sqlserver' as const, label: 'SQL Server 实时库', active: true },
+                { id: 'sqlite' as const, label: 'SQLite 本地快照', active: false },
+              ]).map((source) => (
+                <option key={source.id} value={source.id}>{source.label}</option>
+              ))}
+            </select>
+          </label>
           <button
             className="theme-toggle"
             type="button"

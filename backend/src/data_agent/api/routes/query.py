@@ -27,7 +27,7 @@ router = APIRouter()
 
 @router.post("/api/query")
 def query_data(payload: QueryRequest, request: Request) -> JSONResponse:
-    """查询接口：AI 基于知识生成 SQL，守卫只读执行，再由 AI 基于证据回答。"""
+    """查询接口：AI 基于知识生成 SQL，安全校验后执行，再由 AI 基于证据回答。"""
 
     source, profile = active_context(request)
 
@@ -61,6 +61,7 @@ def query_data(payload: QueryRequest, request: Request) -> JSONResponse:
             result_payload["download_id"] = request.app.state.query_exports.register(
                 sql=outcome.result.plan.base_sql,
                 parameters=outcome.result.plan.parameters,
+                source_id=source.id,
             )
         return JSONResponse(
             {

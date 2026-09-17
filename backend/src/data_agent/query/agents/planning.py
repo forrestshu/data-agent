@@ -55,7 +55,7 @@ class PlanningAnalysis(BaseModel):
 
     status: Literal["ready", "clarification_required", "unsupported"]
     confidence: float = Field(default=0.75, ge=0, le=1)
-    route_reason: str = "根据语义层生成只读查询"
+    route_reason: str = "根据语义层生成经安全校验的查询"
     clarification_question: str | None = None
     clarification_kind: Literal["choice", "number", "text"] = "text"
     clarification_options: list[str] = Field(default_factory=list)
@@ -134,7 +134,7 @@ class PlanningAnalysis(BaseModel):
     @field_validator("route_reason", mode="before")
     @classmethod
     def normalize_route_reason(cls, value: Any) -> str:
-        return str(value).strip() if value is not None and str(value).strip() else "根据语义层生成只读查询"
+        return str(value).strip() if value is not None and str(value).strip() else "根据语义层生成经安全校验的查询"
 
 
 AnalysisT = TypeVar("AnalysisT", bound=PlanningAnalysis)

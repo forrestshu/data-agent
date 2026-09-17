@@ -1,4 +1,4 @@
-"""SQL 安全层：按活动方言约束模型 SELECT，再交给只读执行器。"""
+"""SQL 安全层：按活动方言约束模型 SELECT，再交给执行器。"""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ from sqlglot.errors import OptimizeError, ParseError
 from sqlglot.optimizer.qualify import qualify
 
 from data_agent.knowledge.semantic_catalog import SemanticCatalog
-from data_agent.database import Database
+from data_agent.database import DatabaseSource
 
 
 class SQLValidationError(ValueError):
-    """安全边界异常：SQL 不是单条、只读、已审核且资源受限的查询。"""
+    """安全边界异常：SQL 不是单条、已审核且资源受限的查询。"""
 
 
 @dataclass(frozen=True)
@@ -31,7 +31,7 @@ class ValidatedSQL:
 class SQLGuard:
     """确定性守卫：模型可以写查询，但不能决定安全策略和可访问范围。
 
-    全链路应复用同一实例：Agent 规划/repair 与 Executor 执行前强制校验共用，
+    全链路应复用同一实例：规划 repair 与执行前准备共用，
     禁止在各调用点各自 new 导致 max_rows/白名单语义漂移。
     """
 
@@ -48,14 +48,15 @@ class SQLGuard:
         catalog: SemanticCatalog,
         database_profile: dict[str, Any],
         max_rows: int = 500,
-        source: Database | None = None,
+        source: DatabaseSource | None = None,
     ) -> None:
         """从语义目录建立已审核表列和关系权限；机器画像只证明结构真实存在。"""
 
         self.max_rows = max_rows
         self.catalog = catalog
         self.source = source
-        self.dialect = "sqlite"
+        self.dialect = source.dialect if source is not None else "sqlite"
+        self.schema = source.schema if source is not None else None
         actual_tables = {
             str(table["name"]): {
                 str(column["name"])
@@ -105,8 +106,11 @@ class SQLGuard:
                 continue
             database = table.args.get("db")
             catalog = table.args.get("catalog")
-            if database is not None and database.name.casefold() not in {"", "main"}:
-                raise SQLValidationError("查询只能访问当前只读数据库。")
+            allowed_schemas = {"", "main"}
+            if self.schema:
+                allowed_schemas.add(self.schema.casefold())
+            if database is not None and database.name.casefold() not in allowed_schemas:
+                raise SQLValidationError("查询只能访问当前数据库。")
             if catalog is not None:
                 raise SQLValidationError("查询不能访问外部数据库。")
             canonical = self._table_lookup.get(table.name.casefold())
@@ -312,7 +316,7 @@ class SQLGuard:
                 )
 
     def _physical_tree(self, tree: exp.Select) -> exp.Select:
-        """把逻辑视图名映射到当前 SQLite 数据库。"""
+        """把逻辑视图名映射到当前数据源的物理对象。"""
 
         physical = tree.copy()
         cte_names = self._cte_names(physical)
@@ -321,7 +325,7 @@ class SQLGuard:
                 continue
             canonical = self._table_lookup[table.name.casefold()]
             table.set("this", exp.to_identifier(canonical))
-            table.set("db", None)
+            table.set("db", exp.to_identifier(self.schema) if self.schema else None)
             table.set("catalog", None)
         return physical
 

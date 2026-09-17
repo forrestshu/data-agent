@@ -15,16 +15,30 @@ router = APIRouter()
 
 @router.get("/api/health")
 def health(request: Request) -> dict[str, Any]:
-    """健康接口：确认 SQLite 文件和 AI 配置。"""
+    """健康接口：确认当前数据源和 AI 配置。"""
 
     source, _ = active_context(request)
     llm: LLMClient | None = request.app.state.llm
+    ready = False
+    detail = None
+    try:
+        if source.id == "sqlite":
+            ready = source.path.exists()
+        else:
+            with source.connect(timeout_seconds=3) as connection:
+                cursor = source.execute(connection, "SELECT 1 AS ready")
+                ready = bool(cursor.fetchone())
+    except Exception:
+        detail = "当前数据源暂时无法连接。"
     return {
         "service": "ok",
         "database": {
-            "type": "sqlite",
-            "file": source.path.name,
-            "ready": source.path.exists(),
+            "id": source.id,
+            "type": source.dialect,
+            "label": source.label,
+            "ready": ready,
+            "detail": detail,
+            "file": source.path.name if source.id == "sqlite" else None,
         },
         "ai": {
             "configured": llm is not None,

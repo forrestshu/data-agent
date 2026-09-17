@@ -158,3 +158,14 @@ export interface AIStatus {
   required: boolean
   role: string
 }
+
+export type DataSourceId = 'sqlserver' | 'sqlite'
+
+export interface DataSourceStatus {
+  active_source_id: DataSourceId
+  sources: Array<{
+    id: DataSourceId
+    label: string
+    active: boolean
+  }>
+}

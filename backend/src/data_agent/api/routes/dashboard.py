@@ -41,7 +41,7 @@ def query_dashboard(
     payload: DashboardQueryRequest,
     request: Request,
 ) -> JSONResponse:
-    """Dashboard 查询链路：概况理解、只读验证和图表契约彼此独立于数据查询。"""
+    """Dashboard 查询链路：概况理解、安全校验和图表契约彼此独立于数据查询。"""
 
     source, profile = active_context(request)
 

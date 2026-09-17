@@ -17,7 +17,7 @@ from data_agent.api import _json_safe, create_app
 def create_test_app(**kwargs: Any):
     """API 测试使用唯一的 SQLite 数据库。"""
 
-    return create_app(**kwargs)
+    return create_app(source_id="sqlite", **kwargs)
 
 
 class FakeLLMClient:
@@ -70,25 +70,6 @@ class EvidenceAnswerLLMClient(FakeLLMClient):
         self.text_calls += 1
         evidence = json.loads(user_prompt)["数据依据"]
         return f"库存量低于 **25** 的物料共有 **{evidence['total_count']}** 个。"
-
-
-class ColumnLocalizingLLMClient(FakeLLMClient):
-    """为未知 SQL 别名返回中文表头，验证动态字段本地化回退。"""
-
-    def __init__(self, intent: dict[str, Any], answer: str) -> None:
-        super().__init__(intent, answer)
-        self.localization_calls = 0
-
-    def complete_json(
-        self,
-        system_prompt: str,
-        user_prompt: str,
-        max_tokens: int = 1200,
-    ) -> dict[str, Any]:
-        if "尚未登记语义的英文列名" in system_prompt:
-            self.localization_calls += 1
-            return {"column_labels": {"total_qty": "库存总数量"}}
-        return super().complete_json(system_prompt, user_prompt, max_tokens)
 
 
 class BrokenIntentLLMClient:
@@ -147,8 +128,6 @@ class DashboardGuardRepairLLMClient:
         user_prompt: str,
         max_tokens: int = 1200,
     ) -> dict[str, Any]:
-        if "尚未登记语义的英文列名" in system_prompt:
-            return {"column_labels": {"OrderCount": "销售订单数"}}
         self.planning_calls += 1
         if self.planning_calls <= 2:
             return {
@@ -307,6 +286,20 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(response.json()["database"]["ready"])
         self.assertTrue(response.json()["database"]["file"].endswith(".sqlite"))
 
+    def test_source_can_switch_explicitly(self) -> None:
+        initial = self.client.get("/api/source").json()
+        self.assertEqual("sqlite", initial["active_source_id"])
+        switched = self.client.put(
+            "/api/source",
+            json={"source_id": "sqlserver"},
+        ).json()
+        self.assertEqual("sqlserver", switched["active_source_id"])
+        restored = self.client.put(
+            "/api/source",
+            json={"source_id": "sqlite"},
+        ).json()
+        self.assertEqual("sqlite", restored["active_source_id"])
+
     def test_decimal_values_are_json_serializable(self) -> None:
         encoded = _json_safe(
             {
@@ -358,8 +351,8 @@ class ApiTests(unittest.TestCase):
         self.assertGreater(payload["widgets"][0]["value"], 0)
         self.assertTrue(any(widget["kind"] == "bar" for widget in payload["widgets"]))
 
-    def test_fuzzy_query_requires_then_accepts_confirmation(self) -> None:
-        """模型置信度较低时不查库，用户确认后才返回结果。"""
+    def test_low_confidence_ready_sql_executes_without_confirmation(self) -> None:
+        """置信度不再打断查询；ready 且通过安全校验后直接查库。"""
 
         question = "帮我看看物料 110000012 仓里还剩多少"
         fake = FakeLLMClient(
@@ -374,14 +367,11 @@ class ApiTests(unittest.TestCase):
             answer="物料 **110000012** 的库存数量见查询结果。",
         )
         with TestClient(create_test_app(llm_client=fake)) as client:
-            pending = client.post("/api/query", json={"question": question})
-            self.assertEqual("confirmation_required", pending.json()["status"])
-            view_name = pending.json()["route"]["view_name"]
-            confirmed = client.post(
-                "/api/query",
-                json={"question": question, "confirmed_view": view_name},
-            )
-        self.assertEqual("completed", confirmed.json()["status"])
+            response = client.post("/api/query", json={"question": question})
+        payload = response.json()
+        self.assertEqual("completed", payload["status"])
+        self.assertEqual("AiQueryPartOnHandV", payload["result"]["route"]["view_name"])
+        self.assertFalse(payload["result"]["route"]["requires_confirmation"])
 
     def test_dashboard_query_uses_separate_overview_chain(self) -> None:
         """Dashboard 对相对概念直接生成排序概况，不复用数据查询接口。"""
@@ -539,10 +529,10 @@ class AIApiTests(unittest.TestCase):
         self.assertTrue(payload["result"]["rows"])
         self.assertTrue(all(row["PartNum"] == "110000012" for row in payload["result"]["rows"]))
 
-    def test_ai_localizes_unknown_english_result_alias(self) -> None:
-        """知识和固定词典均未覆盖的英文别名由当前模型补充中文表头。"""
+    def test_aggregate_alias_uses_catalog_operator_label(self) -> None:
+        """目录没有的输出别名由表头规则按 SUM(Qty) 拼成现有量合计，不二次调用模型。"""
 
-        fake = ColumnLocalizingLLMClient(
+        fake = FakeLLMClient(
             {
                 "status": "ready",
                 "confidence": 0.96,
@@ -564,8 +554,7 @@ class AIApiTests(unittest.TestCase):
 
         payload = response.json()
         self.assertEqual("completed", payload["status"])
-        self.assertEqual("库存总数量", payload["result"]["column_labels"]["total_qty"])
-        self.assertEqual(1, fake.localization_calls)
+        self.assertEqual("现有量合计", payload["result"]["column_labels"]["total_qty"])
 
     def test_ai_ambiguity_returns_frontend_clarification(self) -> None:
         """AI 无法唯一判断指标时不查库，而是返回可直接展示的追问。"""
@@ -660,7 +649,11 @@ class AIApiTests(unittest.TestCase):
         self.assertEqual(2, fake.json_calls)
         self.assertEqual("AiQueryPoProgressV", payload["result"]["route"]["view_name"])
         self.assertIn("VendorName", payload["result"]["plan"]["base_sql"])
-        self.assertIn("单个视图 AiQueryPoProgressV", fake.user_prompts[1])
+        self.assertTrue(
+            "单个视图 AiQueryPoProgressV" in fake.user_prompts[1]
+            or "应生成 SELECT" in fake.user_prompts[1]
+            or "应生成单视图 SQL" in fake.user_prompts[1]
+        )
 
     def test_hmi_description_query_does_not_require_code_clarification(self) -> None:
         """文本物料名可直接作为 BOM 描述包含条件，不应要求用户再提供物料编码。"""

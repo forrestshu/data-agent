@@ -1,4 +1,4 @@
-"""Dashboard Agent：理解概况问题、验证只读 SQL，并交给图表层渲染。"""
+"""Dashboard Agent：理解概况问题、安全校验 SQL，并交给图表层渲染。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import Field, field_validator
 
 from data_agent.knowledge.semantic_catalog import SemanticCatalog
-from data_agent.database import Database
+from data_agent.database import DatabaseSource
 from data_agent.llm import LLMClient, LLMUnavailable
 from data_agent.knowledge.prompt import build_semantic_context, load_prompt
 from .planning import (
@@ -72,7 +72,7 @@ class DashboardTrace:
 
 @dataclass(frozen=True)
 class DashboardUnderstanding:
-    """Dashboard 理解结果：携带已通过 SQL Guard 的完整只读 SQL。"""
+    """Dashboard 理解结果：携带已通过安全校验的 SQL。"""
 
     effective_question: str
     route: RouteDecision
@@ -115,7 +115,7 @@ class DashboardAgent:
         catalog: SemanticCatalog,
         llm_client: LLMClient | None,
         database_profile: dict[str, Any] | None = None,
-        source: Database | None = None,
+        source: DatabaseSource | None = None,
         sql_guard: SQLGuard | None = None,
     ) -> None:
         """装配概况 Agent；安全目录和数据库画像约束 SQLite 查询。
@@ -141,7 +141,14 @@ class DashboardAgent:
     def _system_prompt(self) -> str:
         """Dashboard 专用提示：允许概况推断，但要求所有数字经过数据库验证。"""
 
-        return load_prompt("dashboard.md", knowledge_context=self._knowledge_context())
+        dialect = "SQL Server T-SQL" if self.source and self.source.dialect == "tsql" else "SQLite"
+        limit_rule = "TOP (N)" if dialect.startswith("SQL Server") else "LIMIT N"
+        return load_prompt(
+            "dashboard.md",
+            knowledge_context=self._knowledge_context(),
+            database_dialect=dialect,
+            limit_rule=limit_rule,
+        )
 
     @staticmethod
     def _parse_analysis(payload: dict[str, Any]) -> DashboardAnalysis:

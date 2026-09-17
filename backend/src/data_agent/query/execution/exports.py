@@ -13,6 +13,7 @@ class QueryExportPlan:
     created_at: float
     sql: str
     parameters: tuple[Any, ...]
+    source_id: str
 
 
 class QueryExportRegistry:
@@ -28,14 +29,14 @@ class QueryExportRegistry:
         ]:
             self._plans.pop(key, None)
 
-    def register(self, *, sql: str, parameters: tuple[Any, ...]) -> str:
+    def register(self, *, sql: str, parameters: tuple[Any, ...], source_id: str) -> str:
         now = time.monotonic()
         self._purge(now)
         while len(self._plans) >= self.capacity:
             oldest = min(self._plans, key=lambda key: self._plans[key].created_at)
             self._plans.pop(oldest, None)
         download_id = uuid4().hex
-        self._plans[download_id] = QueryExportPlan(now, sql, parameters)
+        self._plans[download_id] = QueryExportPlan(now, sql, parameters, source_id)
         return download_id
 
     def get(self, download_id: str) -> QueryExportPlan | None:

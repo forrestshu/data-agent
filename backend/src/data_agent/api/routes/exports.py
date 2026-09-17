@@ -12,7 +12,7 @@ from openpyxl import Workbook
 
 from data_agent.api.deps import active_context
 from data_agent.knowledge.semantic_catalog import load_semantic_catalog
-from data_agent.query.execution.executor import ReadOnlyQueryExecutor
+from data_agent.query.execution.executor import QueryExecutor
 from data_agent.query.execution.exports import QueryExportRegistry
 from data_agent.query.execution.guard import SQLGuard
 
@@ -42,21 +42,31 @@ def download_query_export(download_id: str, request: Request) -> StreamingRespon
     if plan is None:
         raise HTTPException(status_code=404, detail="下载已失效，请重新查询。")
 
-    source, profile = active_context(request)
+    if plan.source_id not in request.app.state.sources:
+        raise HTTPException(status_code=404, detail="原查询数据源已不可用，请重新查询。")
+    source = request.app.state.sources[plan.source_id]
+    profile = request.app.state.profile
+    if source.id == "sqlserver":
+        profile = {**profile, "generated_limitations": []}
     catalog = load_semantic_catalog()
     guard = SQLGuard(catalog, profile, max_rows=500, source=source)
-    executor = ReadOnlyQueryExecutor(
+    executor = QueryExecutor(
         source,
         catalog,
         database_profile=profile,
-        guard=guard,
+    )
+    validated = guard.validate(
+        plan.sql,
+        plan.parameters,
+        requested_limit=500,
+        preserve_complete=True,
     )
     output = SpooledTemporaryFile(max_size=8 * 1024 * 1024, mode="w+b")
     workbook = Workbook(write_only=True)
     worksheet = workbook.create_sheet("查询结果")
 
     try:
-        with executor.open_generated_export(plan.sql, plan.parameters) as (columns, rows):
+        with executor.open_validated_export(validated) as (columns, rows):
             worksheet.append(columns)
             for row in rows:
                 worksheet.append(tuple(_safe_excel_value(value) for value in row))

@@ -12,8 +12,9 @@ from data_agent.query.agents.data_query import (
 )
 from data_agent.knowledge.semantic_catalog import load_semantic_catalog
 from data_agent.query.agents.dashboard import DashboardAgent
-from data_agent.query.execution.executor import ReadOnlyQueryExecutor
-from data_agent.database import Database
+from data_agent.query.execution.executor import QueryExecutor, QueryResult
+from data_agent.query.execution.prepare import prepare_executable_query
+from data_agent.database import Database, SQLServerDatabase
 from data_agent.knowledge.database_profile import load_database_profile
 from data_agent.knowledge.prompt import build_semantic_context
 from data_agent.query.contracts import RouteDecision
@@ -68,17 +69,14 @@ class RepairingLLMClient:
         return "找到螺栓类物料。"
 
 
-class ScalarAggregateRepairingLLMClient:
-    """测试替身：模拟模型先把单值库存总量错误拆成分组结果，再按粒度守卫修复。"""
+class RankingWithoutLimitLLMClient:
+    """测试替身：排名 SQL 已排序但未写 LIMIT，规划层不应再改写。"""
 
     provider = "deepseek"
     model = "deepseek-v4-flash"
 
     def __init__(self) -> None:
-        """记录模型调用与修复提示，验证错误 SQL 不会直接进入执行层。"""
-
         self.json_calls = 0
-        self.user_prompts: list[str] = []
 
     def complete_json(
         self,
@@ -86,90 +84,18 @@ class ScalarAggregateRepairingLLMClient:
         user_prompt: str,
         max_tokens: int = 1200,
     ) -> dict[str, Any]:
-        """第一次附加普通字段和分组，第二次只保留单个 SUM 输出。"""
-
         self.json_calls += 1
-        self.user_prompts.append(user_prompt)
-        common = {
-            "status": "ready",
-            "confidence": 0.98,
-            "intent_summary": "查询指定物料库存总量",
-            "route_reason": "库存视图包含物料描述和库存数量",
-            "clarification_question": None,
-            "matched_concepts": ["GCr15圆钢Φ45", "库存"],
-            "source_views": ["AiQueryPartOnHandV"],
-            "filter_constraints": [
-                {
-                    "column": "PartDescription",
-                    "operator": "contains",
-                    "value": "GCr15圆钢Φ45",
-                }
-            ],
-            "requested_fields": ["Qty"],
-            "parameters": ["%GCr15圆钢Φ45%"],
-            "assumptions": [],
-        }
-        if self.json_calls == 1:
-            return {
-                **common,
-                "sql": (
-                    "SELECT PartNum, PartDescription, SUM(Qty) AS TotalQty "
-                    "FROM AiQueryPartOnHandV WHERE PartDescription LIKE ? "
-                    "GROUP BY PartNum, PartDescription"
-                ),
-            }
         return {
-            **common,
-            "sql": (
-                "SELECT SUM(Qty) AS TotalQty FROM AiQueryPartOnHandV "
-                "WHERE PartDescription LIKE ?"
-            ),
-        }
-
-    def complete_text(
-        self,
-        system_prompt: str,
-        user_prompt: str,
-        max_tokens: int = 1200,
-    ) -> str:
-        """本测试只覆盖查询规划，回答层返回固定文本。"""
-
-        return "库存总量查询已完成。"
-
-
-class RankingContractRepairingLLMClient:
-    """测试替身：第一次只排序不截取，第二次补上题目指定的 Top N。"""
-
-    provider = "deepseek"
-    model = "deepseek-v4-flash"
-
-    def __init__(self) -> None:
-        self.json_calls = 0
-
-    def complete_json(
-        self,
-        system_prompt: str,
-        user_prompt: str,
-        max_tokens: int = 1200,
-    ) -> dict[str, Any]:
-        self.json_calls += 1
-        common = {
             "status": "ready",
             "confidence": 0.96,
             "intent_summary": "查询库存总量最高的前5个物料",
             "route_reason": "库存视图可按物料汇总和排序",
             "source_views": ["AiQueryPartOnHandV"],
-            "filter_constraints": [],
-            "requested_fields": ["PartNum", "Qty"],
-            "parameters": [],
-        }
-        limit = " LIMIT 5" if self.json_calls > 1 else ""
-        return {
-            **common,
             "sql": (
                 "SELECT PartNum, SUM(Qty) AS TotalQty FROM AiQueryPartOnHandV "
-                "GROUP BY PartNum ORDER BY TotalQty DESC" + limit
+                "GROUP BY PartNum ORDER BY TotalQty DESC"
             ),
+            "parameters": [],
         }
 
     def complete_text(
@@ -347,17 +273,44 @@ class TextToSQLTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        """加载当前语义层与真实数据库画像，所有测试保持只读。"""
+        """加载当前语义层与真实数据库画像。"""
 
         cls.catalog = load_semantic_catalog()
         cls.profile = load_database_profile(DATABASE_PROFILE_PATH)
         cls.guard = SQLGuard(cls.catalog, cls.profile)
-        cls.executor = ReadOnlyQueryExecutor(
+        cls.executor = QueryExecutor(
             Database(path=DEFAULT_DATABASE_PATH),
             cls.catalog,
             database_profile=cls.profile,
-            guard=cls.guard,
         )
+
+    def _execute_sql(
+        self,
+        question: str,
+        sql: str,
+        parameters: tuple[Any, ...],
+        route: RouteDecision,
+        limit: int = 500,
+    ) -> QueryResult:
+        prepared = prepare_executable_query(
+            self.guard,
+            sql,
+            parameters,
+            limit,
+            dialect=self.executor.source.dialect,
+        )
+        return self.executor.execute_validated(question, prepared, route)
+
+    def test_sqlserver_guard_uses_tsql_and_cux_schema(self) -> None:
+        source = SQLServerDatabase("127.0.0.1", 1433, "user", "password", "prod")
+        guard = SQLGuard(self.catalog, self.profile, source=source)
+        validated = guard.validate(
+            "SELECT PartNum, PartDescription FROM AiQueryPartV WHERE PartNum = ?",
+            ["110000012"],
+            requested_limit=10,
+        )
+        self.assertIn("SELECT TOP 10", validated.sql)
+        self.assertIn("FROM Cux.AiQueryPartV", validated.sql)
 
     def test_prompt_prefers_precomputed_business_fields_and_preserves_parameters(self) -> None:
         """提示词必须阻止二次聚合、参数截断、错误编码字段和应收应付串域。"""
@@ -383,41 +336,28 @@ class TextToSQLTests(unittest.TestCase):
         self.assertIn("工单末道完成量用JobOprCompQty", prompt)
         self.assertIn("威图悬臂箱底座，A250063", prompt)
         self.assertIn("必须返回完整、可执行的参数化 SQLite `SELECT`", prompt)
-        self.assertIn("程序不会替你推导或补 DISTINCT", prompt)
-        self.assertIn("唯一业务对象集合", prompt)
-        self.assertIn("entity_keys", prompt)
+        self.assertIn("每行粒度", prompt)
+        self.assertIn("COUNT(DISTINCT 对象键)", prompt)
+        self.assertIn("唯一对象集合", prompt)
+        self.assertIn("assumptions", prompt)
+        self.assertNotIn("entity_keys", prompt)
+        self.assertNotIn("result_shape", prompt)
+        self.assertNotIn("requested_fields", prompt)
         self.assertEqual(16, prompt.count("Company=公司代码"))
         self.assertIn("项目“已验收”表示Checkdate非空", prompt)
-        self.assertIn("先确定结果是明细、单值汇总、分组还是排名", prompt)
         self.assertIn("SELECT覆盖用户要求的全部字段", prompt)
 
-    def test_result_shape_distinguishes_rankings_and_mixed_outputs_from_scalar_totals(self) -> None:
-        """Top N 列表和“描述+总量”不是只允许一个聚合列的单值问题。"""
+    def test_planning_does_not_rewrite_missing_top_n_limit(self) -> None:
+        """规划只做 Guard，不再把问题里的前 N 补进 SQL。"""
 
-        self.assertTrue(
-            DataQueryAgent._question_requests_grouped_result("查询库存总量最高的前5个货位")
-        )
-        self.assertFalse(
-            DataQueryAgent._question_requests_scalar_aggregate(
-                "查询物料编码110000001的物料描述以及当前库存总量"
-            )
-        )
-        self.assertFalse(
-            DataQueryAgent._question_requests_scalar_aggregate(
-                "查询物料编码Z01.02.0026的最新采购价"
-            )
-        )
-
-    def test_explicit_top_n_is_applied_without_model_retry(self) -> None:
-        """已有排序时，规划层直接应用问题中的 N，不再让模型重复补 LIMIT。"""
-
-        fake = RankingContractRepairingLLMClient()
+        fake = RankingWithoutLimitLLMClient()
         agent = DataQueryAgent(self.catalog, fake, database_profile=self.profile)
 
         understanding = agent.understand("查询库存总量最高的前5个物料")
 
         self.assertEqual(1, fake.json_calls)
-        self.assertIn("ORDER BY TotalQty DESC LIMIT 5", understanding.generated_sql)
+        self.assertIn("ORDER BY TotalQty DESC", understanding.generated_sql)
+        self.assertNotIn("LIMIT", understanding.generated_sql)
 
     def test_compact_prompt_knowledge_keeps_all_views_and_fields(self) -> None:
         """紧凑语义卡片必须保留全部视图、业务名称、字段描述和精选示例。"""
@@ -516,38 +456,13 @@ class TextToSQLTests(unittest.TestCase):
             with self.subTest(sql=sql):
                 self.guard.validate(sql, [], requested_limit=20)
 
-    def test_declared_query_contract_rejects_missing_output_and_operation(self) -> None:
-        """规划声明是验证 Interface：字段或关键动作未落实时必须进入修复。"""
+    def test_grouped_distinct_entity_count_passes_guard_without_declared_contract(self) -> None:
+        """按业务键去重的分组计数只走 Guard，不再核对形态声明。"""
 
         agent = DataQueryAgent(self.catalog, None, database_profile=self.profile)
         analysis = IntentAnalysis(
             status="ready",
             source_views=["AiQueryPoOverViewV"],
-            requested_fields=["ApproveStatus_c", "PONum"],
-            result_shape="grouped_aggregate",
-            required_operations=["aggregate", "distinct_count", "group_by"],
-            grouping_fields=["ApproveStatus_c"],
-            entity_keys=["PONum"],
-            sql=(
-                "SELECT ApproveStatus_c, COUNT(*) AS OrderCount "
-                "FROM AiQueryPoOverViewV GROUP BY ApproveStatus_c"
-            ),
-        )
-        with self.assertRaisesRegex(SQLValidationError, "PONum|distinct_count"):
-            agent._validate_ready(analysis, 500, "查询各个审批状态的采购订单数量分布")
-
-    def test_declared_query_contract_accepts_grouped_distinct_entity_count(self) -> None:
-        """按业务键去重的分组计数应一次通过查询意图和 SQL Guard。"""
-
-        agent = DataQueryAgent(self.catalog, None, database_profile=self.profile)
-        analysis = IntentAnalysis(
-            status="ready",
-            source_views=["AiQueryPoOverViewV"],
-            requested_fields=["ApproveStatus_c", "PONum"],
-            result_shape="grouped_aggregate",
-            required_operations=["aggregate", "distinct_count", "group_by", "order_by"],
-            grouping_fields=["ApproveStatus_c"],
-            entity_keys=["PONum"],
             sql=(
                 "SELECT ApproveStatus_c, COUNT(DISTINCT PONum) AS OrderCount "
                 "FROM AiQueryPoOverViewV GROUP BY ApproveStatus_c "
@@ -560,63 +475,6 @@ class TextToSQLTests(unittest.TestCase):
             "查询各个审批状态的采购订单数量分布",
         )
         self.assertIn("COUNT(DISTINCT PONum)", validated.sql or "")
-
-    def test_declared_distinct_requires_entity_key_confirmation(self) -> None:
-        """DISTINCT 仍由模型决定，但模型声明后必须说明去重对象。"""
-
-        agent = DataQueryAgent(self.catalog, None, database_profile=self.profile)
-        analysis = IntentAnalysis(
-            status="ready",
-            source_views=["AiQueryPoOverViewV"],
-            requested_fields=["PONum"],
-            result_shape="scalar_aggregate",
-            required_operations=["aggregate", "distinct_count"],
-            entity_keys=[],
-            sql="SELECT COUNT(DISTINCT PONum) AS OrderCount FROM AiQueryPoOverViewV",
-        )
-        with self.assertRaisesRegex(SQLValidationError, "entity_keys"):
-            agent._validate_ready(analysis, 500, "查询审批状态为 Approved 的采购订单数量")
-
-    def test_ratio_question_requires_actual_division(self) -> None:
-        """仅返回分子和分母不等于回答比率问题。"""
-
-        agent = DataQueryAgent(self.catalog, None, database_profile=self.profile)
-        analysis = IntentAnalysis(
-            status="ready",
-            source_views=["AiQueryProjectJobV"],
-            requested_fields=["CompleteQty", "JobHead_ProdQty"],
-            result_shape="detail",
-            required_operations=[],
-            sql=(
-                "SELECT CompleteQty, JobHead_ProdQty FROM AiQueryProjectJobV "
-                "WHERE ProjectID = ?"
-            ),
-            parameters=["24M148-H"],
-        )
-        with self.assertRaisesRegex(SQLValidationError, "比率"):
-            agent._validate_ready(
-                analysis,
-                500,
-                "查询项目24M148-H下所有工单的完工入库率",
-            )
-
-    def test_currency_balance_requires_entity_and_currency_outputs(self) -> None:
-        """原币/本币余额必须带业务对象和币种，不能只返回无法解释的数字。"""
-
-        agent = DataQueryAgent(self.catalog, None, database_profile=self.profile)
-        analysis = IntentAnalysis(
-            status="ready",
-            source_views=["AiQueryReceivablesV"],
-            requested_fields=["RemainAmount"],
-            sql="SELECT RemainAmount FROM AiQueryReceivablesV WHERE CustName = ?",
-            parameters=["CARRIER MEXICO"],
-        )
-        with self.assertRaisesRegex(SQLValidationError, "CueeCode|CustName"):
-            agent._validate_ready(
-                analysis,
-                500,
-                "查询客户CARRIER MEXICO的原币应收余额",
-            )
 
     def test_guard_accepts_both_bom_material_roles(self) -> None:
         """BOM 上级件和子物料是两个不同但都已批准的关系。"""
@@ -679,7 +537,7 @@ class TextToSQLTests(unittest.TestCase):
             requires_confirmation=False,
             confirmation_question=None,
         )
-        result = self.executor.execute_generated_sql(
+        result = self._execute_sql(
             "有没有螺栓之类的",
             "SELECT PartNum, PartDescription FROM AiQueryPartV WHERE PartDescription LIKE ? LIMIT 20",
             ("%螺栓%",),
@@ -704,7 +562,7 @@ class TextToSQLTests(unittest.TestCase):
             requires_confirmation=False,
             confirmation_question=None,
         )
-        result = self.executor.execute_generated_sql(
+        result = self._execute_sql(
             "查询描述为GCr15圆钢Φ45的物料编码",
             "SELECT PartNum, PartDescription FROM AiQueryPartV WHERE PartDescription LIKE ?",
             ("%GCr15圆钢Φ45%",),
@@ -729,7 +587,7 @@ class TextToSQLTests(unittest.TestCase):
             requires_confirmation=False,
             confirmation_question=None,
         )
-        result = self.executor.execute_generated_sql(
+        result = self._execute_sql(
             "查询GCr15圆钢Φ45还有多少库存",
             (
                 "SELECT SUM(Qty) AS TotalQty FROM AiQueryPartOnHandV "
@@ -759,7 +617,7 @@ class TextToSQLTests(unittest.TestCase):
             requires_confirmation=False,
             confirmation_question=None,
         )
-        result = self.executor.execute_generated_sql(
+        result = self._execute_sql(
             "查询描述包含钢板的物料编码",
             "SELECT PartNum, PartDescription FROM AiQueryPartV WHERE PartDescription LIKE ?",
             ("%钢板%",),
@@ -783,7 +641,7 @@ class TextToSQLTests(unittest.TestCase):
             requires_confirmation=False,
             confirmation_question=None,
         )
-        result = self.executor.execute_generated_sql(
+        result = self._execute_sql(
             "查询描述为GCr15圆钢Φ45的物料编码",
             "SELECT PartNum, PartDescription FROM AiQueryPartV WHERE PartDescription LIKE ?",
             ("%GCr15%Φ45%",),
@@ -795,7 +653,7 @@ class TextToSQLTests(unittest.TestCase):
         self.assertEqual(("未查到符合条件的记录。",), result.notices)
 
     def test_guard_rejects_writes_unknown_objects_and_unapproved_columns(self) -> None:
-        """用一组负例覆盖连接、只读对象和字段权限边界。"""
+        """用一组负例覆盖连接、开放对象和字段权限边界。"""
 
         invalid_cases = [
             (
@@ -889,25 +747,6 @@ class TextToSQLTests(unittest.TestCase):
 
         self.assertEqual(3, fake.json_calls)
         self.assertIn("WHERE ProjectID = ?", understanding.generated_sql)
-
-    def test_agent_repairs_grouped_sql_for_scalar_inventory_total(self) -> None:
-        """“还有多少库存”必须修复为单行 SUM，不能携带普通字段或 GROUP BY。"""
-
-        fake = ScalarAggregateRepairingLLMClient()
-        agent = DataQueryAgent(
-            self.catalog,
-            fake,
-            database_profile=self.profile,
-        )
-
-        understanding = agent.understand("查询GCr15圆钢Φ45还有多少库存")
-
-        self.assertEqual(2, fake.json_calls)
-        self.assertIn("GROUP BY 会把答案拆成多行", fake.user_prompts[1])
-        self.assertIn("SUM(Qty) AS TotalQty", understanding.generated_sql or "")
-        self.assertNotIn("GROUP BY", (understanding.generated_sql or "").upper())
-        self.assertNotIn("PartNum", understanding.generated_sql or "")
-        self.assertNotIn("PartDescription,", understanding.generated_sql or "")
 
     def test_correct_sql_ignores_nonstandard_auxiliary_metadata(self) -> None:
         """正确 SQL 不应因 `=` 或无效辅助筛选项触发 query_failed。"""

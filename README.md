@@ -1,6 +1,6 @@
 # Data Agent
 
-一个面向 SQLite 快照的自然语言查询系统。DeepSeek 负责理解问题和生成参数化 SQL，后端只允许查询语义层批准的视图与字段，并通过只读 SQLite 连接执行。
+一个可在 SQL Server 实时库与 SQLite 快照间切换的自然语言查询系统。DeepSeek 负责理解问题和生成参数化 SQL，后端只允许查询语义层批准的视图与字段，并在安全校验后执行。
 
 ## 项目结构
 
@@ -10,7 +10,7 @@ data-agent/
 │   ├── data_agent_2026_07_15.sqlite  # SQLite 快照
 │   ├── src/data_agent/
 │   │   ├── api.py          # FastAPI 查询与导出接口
-│   │   ├── database.py     # SQLite 只读访问
+│   │   ├── database.py     # SQLite 访问
 │   │   ├── llm.py          # DeepSeek 客户端
 │   │   ├── settings.py     # 路径配置
 │   │   ├── knowledge/      # 静态业务语义与数据库画像
@@ -26,7 +26,7 @@ data-agent/
 backend/data_agent_2026_07_15.sqlite
 ```
 
-可以通过 `DATA_AGENT_DATABASE` 指向另一份 SQLite 文件。系统不会自动扫描、同步或更新知识画像。
+系统默认使用 SQL Server，前端可切换到 SQLite 本地快照。连接参数通过 `.env` 中的 `SQLSERVER_*` 和 `DATA_AGENT_DEFAULT_SOURCE` 配置；密码不得提交到 Git。两种数据源共享同一份已审核语义目录。
 
 ## 环境配置
 
@@ -36,11 +36,11 @@ backend/data_agent_2026_07_15.sqlite
 cp .env.example .env
 ```
 
-数据库始终以只读模式打开：
+数据库访问约束：
 
-- URI 使用 `mode=ro&immutable=1`；
-- 连接执行 `PRAGMA query_only=ON`；
-- SQL 守卫仅允许单条参数化 `SELECT`；
+- SQLite 使用 `mode=ro&immutable=1` 并执行 `PRAGMA query_only=ON`；
+- SQL Server 使用独立只读账号并仅映射 `Cux` 下的已审核视图；
+- SQL 安全校验仅允许单条参数化 `SELECT`；
 - 禁止写入、外部数据库、系统表、注释和 `SELECT *`；
 - 跨视图查询必须使用语义层批准的完整连接键。
 
