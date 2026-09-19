@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%232563eb'/%3E%3Cpath d='M18 20h28v24H18zM24 36v-7m8 7V23m8 13v-10' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <title>IN-ORDER 应用中心</title>
+  <style>
+    :root {
+      --page: #eaf2ff;
+      --surface: rgba(255, 255, 255, 0.82);
+      --surface-hover: rgba(255, 255, 255, 0.94);
+      --text: #172033;
+      --muted: #667085;
+      --line: #e4e9f0;
+      --accent: #2563eb;
+      --shadow: 0 18px 45px rgba(24, 39, 75, 0.08);
+      --radius: 20px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background: linear-gradient(150deg, #edf5ff 0%, #e5f0ff 46%, #f7faff 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #wave-field {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .shell {
+      width: min(1120px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 82px 0 64px;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 720px;
+      font-size: clamp(36px, 5vw, 58px);
+      line-height: 1.08;
+      letter-spacing: -0.045em;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 48px;
+    }
+
+    .card {
+      position: relative;
+      display: grid;
+      grid-template-columns: 68px 1fr auto;
+      gap: 20px;
+      align-items: center;
+      min-height: 146px;
+      padding: 26px;
+      overflow: hidden;
+      color: inherit;
+      text-decoration: none;
+      background: var(--surface);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: 0 1px 2px rgba(16, 24, 40, 0.02);
+      transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease,
+        background-color 180ms ease;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .card:hover {
+      transform: translateY(-3px);
+      background: var(--surface-hover);
+      border-color: #cbd7e8;
+      box-shadow: var(--shadow);
+    }
+
+    .card:active { transform: translateY(-1px) scale(0.995); }
+
+    .card:focus-visible {
+      outline: 3px solid rgba(37, 99, 235, 0.32);
+      outline-offset: 3px;
+    }
+
+    .featured {
+      border-color: #bad0ff;
+      background: linear-gradient(135deg, #ffffff 45%, #f3f7ff);
+    }
+
+    .icon {
+      display: grid;
+      place-items: center;
+      width: 68px;
+      height: 68px;
+      color: var(--accent);
+    }
+
+    .icon svg {
+      width: 52px;
+      height: 52px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 1.55;
+    }
+
+    .name-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 19px;
+      line-height: 1.3;
+      letter-spacing: -0.015em;
+    }
+
+    .badge {
+      padding: 4px 8px;
+      color: #1d4ed8;
+      background: #dbeafe;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .description {
+      display: block;
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .meta {
+      display: block;
+      margin-top: 12px;
+      color: #98a2b3;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+    }
+
+    .arrow {
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 44px;
+      color: #475467;
+      transition: color 180ms ease, transform 180ms ease;
+    }
+
+    .card:hover .arrow {
+      color: var(--accent);
+      transform: translateX(2px);
+    }
+
+    .arrow svg {
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 2;
+    }
+
+    @media (max-width: 760px) {
+      .shell { width: min(100% - 28px, 560px); padding-top: 46px; }
+      .grid { grid-template-columns: 1fr; margin-top: 38px; }
+      .card { grid-template-columns: 58px 1fr auto; min-height: 132px; padding: 22px; }
+      .icon { width: 58px; height: 58px; }
+      .icon svg { width: 46px; height: 46px; }
+    }
+
+    @media (max-width: 430px) {
+      .card { grid-template-columns: 52px 1fr; }
+      .icon { width: 52px; height: 52px; }
+      .arrow { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="wave-field" aria-hidden="true"></canvas>
+  <main class="shell">
+    <h1>IN-ORDER 应用中心</h1>
+
+    <section class="grid" aria-label="内部应用列表">
+      <a class="card featured" data-port="8091" href="#">
+        <span class="icon" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M8 10h32v25H8z"/><path d="M13 40h22M18 35v5m12-5v5M15 29v-7m9 7V15m9 14v-11"/><circle cx="15" cy="19" r="1.5"/><circle cx="24" cy="12" r="1.5"/><circle cx="33" cy="15" r="1.5"/></svg></span>
+        <span><span class="name-row"><h2>ERP 数据查询</h2><span class="badge">最新版</span></span><span class="description">连接 SQL Server 与 SQLite 的企业数据智能分析平台</span><span class="meta">PORT 8091</span></span>
+        <span class="arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span>
+      </a>
+
+      <a class="card" data-port="8090" href="#">
+        <span class="icon" aria-hidden="true"><svg viewBox="0 0 48 48"><ellipse cx="24" cy="11" rx="14" ry="6"/><path d="M10 11v13c0 3.3 6.3 6 14 6s14-2.7 14-6V11M10 24v13c0 3.3 6.3 6 14 6s14-2.7 14-6V24"/><path d="M10 18c0 3.3 6.3 6 14 6s14-2.7 14-6"/></svg></span>
+        <span><span class="name-row"><h2>ERP 数据查询（经典版）</h2><span class="badge">经典版</span></span><span class="description">原版企业数据查询与分析服务</span><span class="meta">PORT 8090</span></span>
+        <span class="arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span>
+      </a>
+
+      <a class="card" data-port="8000" href="#">
+        <span class="icon" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M15 6h18v8H15zM10 14h28v29H10z"/><path d="M16 21h6m4 0h6M16 28h6m4 0h6M16 35h6m4 0h6"/><circle cx="19" cy="21" r="1"/><circle cx="29" cy="21" r="1"/></svg></span>
+        <span><span class="name-row"><h2>估价助理</h2></span><span class="description">采购价格查询与业务计算工具</span><span class="meta">PORT 8000</span></span>
+        <span class="arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span>
+      </a>
+
+      <a class="card" data-port="8080" href="#">
+        <span class="icon" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M11 5h20l7 7v31H11z"/><path d="M31 5v9h8M18 21h13M18 28h13M18 35h8"/><path d="m31 37 7-7 3 3-7 7-5 2z"/></svg></span>
+        <span><span class="name-row"><h2>制度文档写作助理</h2></span><span class="description">企业制度文档编写与规范化助手</span><span class="meta">PORT 8080</span></span>
+        <span class="arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span>
+      </a>
+
+      <a class="card" data-port="7860" href="#">
+        <span class="icon" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M8 7h23l7 7v27H8z"/><path d="M31 7v9h8M15 21h16M15 28h10M15 35h16"/><path d="m28 25 7 6-7 6"/></svg></span>
+        <span><span class="name-row"><h2>文档翻译工具</h2></span><span class="description">面向技术与数学文档的 PDF 翻译工具</span><span class="meta">PORT 7860</span></span>
+        <span class="arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span>
+      </a>
+    </section>
+
+  </main>
+
+  <script>
+    document.querySelectorAll("[data-port]").forEach((card) => {
+      card.href = `http://${window.location.hostname}:${card.dataset.port}/`;
+    });
+
+    const canvas = document.querySelector("#wave-field");
+    const context = canvas.getContext("2d");
+    const pointer = { x: 0.22, y: 0.24, tx: 0.22, ty: 0.24 };
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let width = 0;
+    let height = 0;
+    let ratio = 1;
+
+    function resize() {
+      ratio = Math.min(window.devicePixelRatio || 1, 2);
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width * ratio;
+      canvas.height = height * ratio;
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    }
+
+    function draw(time = 0) {
+      pointer.x += (pointer.tx - pointer.x) * 0.035;
+      pointer.y += (pointer.ty - pointer.y) * 0.035;
+      context.clearRect(0, 0, width, height);
+
+      const glow = context.createRadialGradient(
+        pointer.x * width, pointer.y * height, 0,
+        pointer.x * width, pointer.y * height, Math.max(width, height) * 0.48
+      );
+      glow.addColorStop(0, "rgba(55, 128, 246, 0.16)");
+      glow.addColorStop(0.45, "rgba(75, 151, 255, 0.07)");
+      glow.addColorStop(1, "rgba(75, 151, 255, 0)");
+      context.fillStyle = glow;
+      context.fillRect(0, 0, width, height);
+
+      const seconds = time * 0.001;
+      for (let band = 0; band < 7; band += 1) {
+        const baseY = height * (0.17 + band * 0.125);
+        const amplitude = 17 + band * 3 + pointer.y * 12;
+        const speed = 0.22 + band * 0.025;
+        const phase = seconds * speed + band * 0.76 + pointer.x * 1.8;
+
+        context.beginPath();
+        for (let x = -24; x <= width + 24; x += 12) {
+          const y = baseY
+            + Math.sin(x * 0.0062 + phase) * amplitude
+            + Math.sin(x * 0.012 - phase * 0.72) * amplitude * 0.32;
+          if (x === -24) context.moveTo(x, y);
+          else context.lineTo(x, y);
+        }
+        context.strokeStyle = `rgba(56, 125, 225, ${0.075 - band * 0.004})`;
+        context.lineWidth = 1.15;
+        context.stroke();
+
+        for (let x = ((seconds * 34 + band * 83) % 170) - 80; x < width; x += 170) {
+          const y = baseY
+            + Math.sin(x * 0.0062 + phase) * amplitude
+            + Math.sin(x * 0.012 - phase * 0.72) * amplitude * 0.32;
+          const shimmer = context.createLinearGradient(x - 22, y, x + 22, y);
+          shimmer.addColorStop(0, "rgba(255,255,255,0)");
+          shimmer.addColorStop(0.5, "rgba(255,255,255,0.72)");
+          shimmer.addColorStop(1, "rgba(255,255,255,0)");
+          context.strokeStyle = shimmer;
+          context.lineWidth = 2;
+          context.beginPath();
+          context.moveTo(x - 22, y);
+          context.lineTo(x + 22, y);
+          context.stroke();
+        }
+      }
+
+      if (!reducedMotion) requestAnimationFrame(draw);
+    }
+
+    window.addEventListener("resize", resize);
+    window.addEventListener("pointermove", (event) => {
+      pointer.tx = event.clientX / width;
+      pointer.ty = event.clientY / height;
+    }, { passive: true });
+    resize();
+    draw();
+  </script>
+</body>
+</html>

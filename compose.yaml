@@ -1,0 +1,12 @@
+services:
+  data-agent:
+    image: ${DATA_AGENT_IMAGE:-ccr.ccs.tencentyun.com/in-order/data-agent:20260917-1}
+    container_name: data-agent-v2
+    restart: unless-stopped
+    env_file:
+      - ./config/app.env
+    ports:
+      - "${DATA_AGENT_HOST_PORT:-8091}:8000"
+    volumes:
+      - ./runtime:/app/.data-agent
+
